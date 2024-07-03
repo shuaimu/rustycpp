@@ -1,3 +1,4 @@
+#pragma once
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -6,7 +7,9 @@
 #include <cstdlib>
 #include <csignal>
 #include <execinfo.h>
+#include "./external/dbg.h"
 #include <iostream>
+
 namespace borrow {
 
 // Macros for custom error handling
@@ -31,91 +34,179 @@ namespace borrow {
 #define borrow_verify(x) {if (!(x)) {volatile int* a = nullptr ; *a;}}
 //#define borrow_verify(x) nullptr
 #else
+
+#define DBG_MACRO_NO_WARNING
 #define borrow_verify(x, errmsg) \
     do { \
         if (!(x)) { \
-            fprintf(stderr, errmsg); \
+            dbg(x, errmsg);\
             PRINT_STACK_TRACE(); \
             std::abort(); \
         } \
-    } while(0)
+    } while(0) 
   
 #endif
 #endif
 
 
+// define RefCell before Ref and RefMut
+template<class T>
+class RefCell;
 
 template<class T>
 class Ref {
- public:
-  const T* raw_{nullptr};
-  std::atomic<int32_t>* p_cnt_{nullptr};
+friend class RefCell<T>;
+public:
   Ref() = default;
   Ref(const Ref&) = delete;
-  Ref(Ref&& p) {
-    raw_ = p.raw_; 
-    p_cnt_ = p.p_cnt_;
+  Ref(Ref&& p) : raw_(p.raw_), p_cnt_(p.p_cnt_){
     p.raw_ = nullptr;
     p.p_cnt_ = nullptr;
   };
-  Ref(Ref& p) {
-    raw_ = p.raw_;
-    p_cnt_ = p.p_cnt_;
+  Ref(Ref& p) : raw_(p.raw_), p_cnt_(p.p_cnt_){
     auto i = (*p_cnt_)++;
     borrow_verify(i > 0, "error in Ref constructor");
   }
   const T* operator->() {
     return raw_;
   }
+
+  const T& operator*() {
+    return *raw_;
+  }
+
   void reset() {
-    auto i = (*p_cnt_)--;
-    borrow_verify(i > 0, "Trying to reset null pointer");
+    auto before_sub = p_cnt_->fetch_sub(1);
+    borrow_verify(before_sub > 0, "Trying to reset a reference of null pointer");
     raw_ = nullptr;
     p_cnt_ = nullptr;
   }
   ~Ref() {
     if (p_cnt_ != nullptr) {
-      auto i = (*p_cnt_)--;
-      borrow_verify(i > 0, "Trying to dereference null pointer"); // failure means - count became negative which is not possible
-    }
+      auto before_sub = p_cnt_->fetch_sub(1);
+      borrow_verify(before_sub > 0, "Trying to deference null pointer"); // failure means - count became negative which is not possible
+    } 
   }
+
+private:
+  const T* raw_{nullptr};
+  std::atomic<int32_t>* p_cnt_{nullptr};
 };
 
 template <typename T>
 class RefMut {
+friend class RefCell<T>;
  public:
-  T* raw_;
-  std::atomic<int32_t>* p_cnt_;
   RefMut() = default;
   RefMut(const RefMut&) = delete;
   RefMut(RefMut&& p) : raw_(p.raw_), p_cnt_(p.p_cnt_) {
-    raw_ = p.raw_;
-    p.p_cnt_ = nullptr;
     p.raw_ = nullptr;
+    p.p_cnt_ = nullptr;
   }
+
   T* operator->() {
     return raw_;
   }
+
+  T& operator*() {
+    return *raw_;
+  }
   void reset() {
-    auto i = (*p_cnt_)++;
-    borrow_verify(i == -1, "error in RefMut reset");
-    p_cnt_ = nullptr;
+    auto i = p_cnt_->fetch_add(1);
+	borrow_verify(i == -1, "error in checking just single reference of RefMut");
+	  p_cnt_ = nullptr;
     raw_ = nullptr;
   }
   ~RefMut() {
-    if (p_cnt_) {
-      auto i = (*p_cnt_)++;
+    if (p_cnt_ != nullptr) {
+      auto i = p_cnt_->fetch_add(1);
       borrow_verify(i == -1, "error in checking just single reference of RefMut");
     }
   }
+private:
+  T* raw_;
+  std::atomic<int32_t>* p_cnt_;
+};
+
+
+template <typename T> 
+class Rc{
+class Weak {
+public: 
+  Weak(const Weak&) = delete;
+  Weak() = default;
+  Weak(Rc<T>& rc) : rc_(&rc) {
+    rc_->weak_cnt_++;
+  }
+  std::optional<Rc<T>> upgrade() {
+    if (rc_ != nullptr && rc_->strong_cnt_ == 0) {
+      return std::nullopt;
+    }
+    rc_->weak_cnt_--;
+    rc_->strong_cnt_++;
+    return *rc_;
+  }
+
+  ~Weak() {
+    if (rc_->strong_cnt_ == 0 && --rc_->weak_cnt_ == 0) {
+      delete rc_;
+    }
+  }
+private:
+  Rc<T>* rc_{nullptr}; // it is guaranteed that rc_ is not null in the lifetime of Weak (implemented by weak_cnt_ in Rc)
+};
+
+
+public:
+  Rc(const Rc&) = delete;
+  Rc() = default;
+  explicit Rc(T* p) : raw_(p), strong_cnt_(new int32_t(1)), weak_cnt_(new int32_t(0)) {}
+
+  Rc(Rc&& p) : raw_(p.raw_), strong_cnt_(p.strong_cnt_), weak_cnt_(p.weak_cnt_) {
+    p.raw_ = p.strong_cnt_ = p.weak_cnt_ = nullptr;
+  }
+
+  T* operator->() {
+    return raw_;
+  }
+
+  T& operator*() {
+    return *raw_;
+  }
+
+  Rc clone() {
+    Rc<T> rc;
+    rc.raw_ = raw_;
+    rc.strong_cnt_ = strong_cnt_;
+    rc.weak_cnt_ = weak_cnt_;
+    (*strong_cnt_)++;
+    return rc;
+  }
+
+  Weak downgrade() {
+    return Weak(*this);
+  }
+
+  ~Rc() { 
+    if (--(*strong_cnt_) == 0) {
+      delete raw_;
+      if (*weak_cnt_ == 0){
+        delete strong_cnt_;
+        delete weak_cnt_;
+      }
+    }
+  }
+
+ private:
+  T* raw_{nullptr};
+  int32_t *strong_cnt_{nullptr}, *weak_cnt_{nullptr};
 };
 
 template <class T>
 class RefCell {
  public:
   RefCell(const RefCell&) = delete;
-  RefCell(): raw_(nullptr), cnt_(0) {
-  }
+  RefCell() = default;
   explicit RefCell(T* p) : raw_(p), cnt_(0) {
   };
   RefCell(RefCell&& p) {
@@ -133,8 +224,6 @@ class RefCell {
     raw_ = p;
     borrow_verify(cnt_ == 0, "error in RefCell reset"); // is this enough to capture data race?
   }
-  T* raw_{nullptr};
-  std::atomic<int32_t> cnt_{0};
 
   inline RefMut<T> borrow_mut() {
     RefMut<T> mut;
@@ -168,10 +257,14 @@ class RefCell {
   }
 
   ~RefCell() {
-    if (raw_) {
+    if (raw_ != nullptr) {
       reset();
     }
   }
+
+private:
+  T* raw_{nullptr}; 
+  std::atomic<int32_t> cnt_{0}; // negative values indicate RefMut, positive values indicate Ref
 };
 
 template <typename T>
