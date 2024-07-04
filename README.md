@@ -14,8 +14,8 @@ int main() {
     // RefMut<int> b = borrow_mut(owner); // wrong! only one mutable ptr at a time 
   } // a's lifetime ends
   {
-    Ref<int> c = borrow_const(owner); // const (non-mutable) ptr
-    Ref<int> d = borrow_const(owner); // okay, multiple const ptrs are allowed
+    Ref<int> c = borrow(owner); // const (non-mutable) ptr
+    Ref<int> d = borrow(owner); // okay, multiple const ptrs are allowed
     // RefMut<int> e = borrow_mut(owner); // wrong! mutable ptr is disallowed when there is a const ptr
   }
   return 0;
@@ -55,8 +55,8 @@ borrow.h:190: error: Nullptr Dereference
 
 borrow.h:199: error: Nullptr Dereference
   Pulse found a potential null pointer dereference  on line 109 indirectly during the call to `borrow::borrow_mut`in call to `borrow::borrow_mut` .
-  197.   auto x = borrow_const(owner);
-  198.   auto y = borrow_const(owner);
+  197.   auto x = borrow(owner);
+  198.   auto y = borrow(owner);
   199.   auto z = borrow_mut(owner);
                   ^
   200. }
