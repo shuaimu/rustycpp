@@ -88,11 +88,9 @@ class Ref {
 	~Ref() {
 		if (p_cnt_ != nullptr) {
 			auto before_sub = p_cnt_->fetch_sub(1);
-			borrow_verify(
-				before_sub > 0,
-				"Trying to deference null pointer");  // failure means - count
-													  // became negative which
-													  // is not possible
+			borrow_verify(before_sub > 0, "Trying to deference null pointer");
+			// if the RefCell have not been deleted (not nullptr)
+			// then the RefCell should have at least one reference
 		}
 	}
 
@@ -141,11 +139,19 @@ template <typename T>
 class Rc {
    public:
 	class Weak {
+		friend class Rc<T>;
+
 	   public:
 		Weak() = default;
 		Weak(const Weak&) = delete;
 		Weak(Weak&& p) : rc_(p.rc_) { p.rc_ = nullptr; }
-		Weak(Rc<T>& rc) : rc_(&rc) { rc_->weak_cnt_++; }
+    Weak& operator=(Weak&& p) {
+      borrow_verify(rc_ == nullptr, "the Weak smart pointer is already initialized");
+      rc_ = p.rc_;
+      p.rc_ = nullptr;
+      return *this;
+    }
+
 		std::optional<Rc<T>> upgrade() const {
 			if (rc_ == nullptr || rc_->strong_cnt_ == 0) {
 				return std::nullopt;
@@ -163,34 +169,33 @@ class Rc {
 		}
 
 	   private:
-		Rc<T>* rc_{
-			nullptr};  // it is guaranteed that rc_ is not null in the lifetime
-					   // of Weak (implemented by weak_cnt_ in Rc)
+		Rc<T>* rc_{nullptr};
+		// it is guaranteed that rc_ is not null in the lifetime
+		// of Weak (implemented by weak_cnt_ in Rc)
 	};
 
 	Rc(const Rc&) = delete;
-	explicit Rc(T* p)
-		: raw_(p), strong_cnt_(new int32_t(1)), weak_cnt_(new int32_t(0)) {
+	Rc(T* p) : raw_(p), strong_cnt_(new int32_t(1)), weak_cnt_(new int32_t(0)) {
 		borrow_verify(p != nullptr, "trying to create Rc with null pointer");
 	}
-	explicit Rc(const T& p)
+	Rc(const T& p)
 		: raw_(new T(p)),
 		  strong_cnt_(new int32_t(1)),
 		  weak_cnt_(new int32_t(0)) {}
-	explicit Rc(T&& p)
+	Rc(T&& p)
 		: raw_(new T(std::move(p))),
 		  strong_cnt_(new int32_t(1)),
 		  weak_cnt_(new int32_t(0)) {}
-	explicit Rc(Rc&& p)
+	Rc(Rc&& p)
 		: raw_(p.raw_), strong_cnt_(p.strong_cnt_), weak_cnt_(p.weak_cnt_) {
 		p.raw_ = nullptr;
 		p.strong_cnt_ = p.weak_cnt_ = nullptr;
 	}
 
-	const T* operator->() const { return raw_; }
+  T* operator->()  { return raw_; }
 
 	const T* as_ptr() const {
-		// Rc is not mutable
+		// Rc is not mutable (cannot change where the pointer points to)
 		return raw_;
 	}
 
@@ -202,13 +207,28 @@ class Rc {
 		rc.strong_cnt_ = strong_cnt_;
 		rc.weak_cnt_ = weak_cnt_;
 		(*strong_cnt_)++;
-		return Rc<T>(std::move(rc)); // since there is only one explicit move constructor for rc
+		return Rc<T>(std::move(rc));
+		// since there is only one explicit move constructor for rc
+	}
+
+	Weak downgrade() {
+		Weak weak;
+		weak.rc_ = this;
+		(*weak_cnt_)++;
+		return weak;
+	}
+  
+  int32_t strong_count() const {
+    return *strong_cnt_;
+  } 
+
+  int32_t weak_count() const {
+    return *weak_cnt_;
+  
   }
 
-	Weak downgrade() { return Weak(*this); }
-
 	~Rc() {
-		if (--*strong_cnt_ == 0) {
+		if (strong_cnt_ != nullptr && --*strong_cnt_ == 0) {
 			delete raw_;
 			if (*weak_cnt_ == 0) {
 				delete strong_cnt_;
@@ -260,7 +280,7 @@ class RefCell {
 		cnt_--;
 		mut.p_cnt_ = &cnt_;
 		mut.raw_ = raw_;
-		raw_ = nullptr;
+		// raw_ = nullptr;
 		return mut;
 	}
 
@@ -272,11 +292,6 @@ class RefCell {
 		ref.raw_ = raw_;
 		ref.p_cnt_ = &cnt_;
 		return ref;
-	}
-
-	T* operator->() {
-		borrow_verify(cnt_ == 0, "verify failed in ->");
-		return raw_;
 	}
 
 	void reset() {
@@ -293,8 +308,8 @@ class RefCell {
 
    private:
 	T* raw_{nullptr};
-	mutable std::atomic<int32_t> cnt_{
-		0};	 // negative values indicate RefMut, positive values indicate Ref
+	mutable std::atomic<int32_t> cnt_{0};
+	// negative values indicate RefMut, positive values indicate Ref
 };
 
 template <typename T>
