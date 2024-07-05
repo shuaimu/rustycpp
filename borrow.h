@@ -145,12 +145,13 @@ class Rc {
 		Weak() = default;
 		Weak(const Weak&) = delete;
 		Weak(Weak&& p) : rc_(p.rc_) { p.rc_ = nullptr; }
-    Weak& operator=(Weak&& p) {
-      borrow_verify(rc_ == nullptr, "the Weak smart pointer is already initialized");
-      rc_ = p.rc_;
-      p.rc_ = nullptr;
-      return *this;
-    }
+		Weak& operator=(Weak&& p) {
+			borrow_verify(rc_ == nullptr,
+						  "the Weak smart pointer is already initialized");
+			rc_ = p.rc_;
+			p.rc_ = nullptr;
+			return *this;
+		}
 
 		std::optional<Rc<T>> upgrade() const {
 			if (rc_ == nullptr || rc_->strong_cnt_ == 0) {
@@ -192,7 +193,7 @@ class Rc {
 		p.strong_cnt_ = p.weak_cnt_ = nullptr;
 	}
 
-  T* operator->()  { return raw_; }
+	T* operator->() { return raw_; }
 
 	const T* as_ptr() const {
 		// Rc is not mutable (cannot change where the pointer points to)
@@ -207,25 +208,20 @@ class Rc {
 		rc.strong_cnt_ = strong_cnt_;
 		rc.weak_cnt_ = weak_cnt_;
 		(*strong_cnt_)++;
-		return Rc<T>(std::move(rc));
-		// since there is only one explicit move constructor for rc
+		return weak;
 	}
 
 	Weak downgrade() {
 		Weak weak;
 		weak.rc_ = this;
 		(*weak_cnt_)++;
-		return weak;
+		return Weak(std::move(weak)); 
+		// have to do this because weak only have explicit move constructor 
 	}
-  
-  int32_t strong_count() const {
-    return *strong_cnt_;
-  } 
 
-  int32_t weak_count() const {
-    return *weak_cnt_;
-  
-  }
+	int32_t strong_count() const { return *strong_cnt_; }
+
+	int32_t weak_count() const { return *weak_cnt_; }
 
 	~Rc() {
 		if (strong_cnt_ != nullptr && --*strong_cnt_ == 0) {
@@ -249,12 +245,14 @@ class RefCell {
 	RefCell(const RefCell&) = delete;
 	RefCell() = default;
 	explicit RefCell(T* p) : raw_(p), cnt_(0) {
+		// using explicit constructor for any pointers owning resources
+		// i.e. can be constructed from either T or T*
 		borrow_verify(p != nullptr,
 					  "trying to create RefCell with null pointer");
 	}
 	explicit RefCell(T&& p) : raw_(new T(std::move(p))), cnt_(0) {}
 
-	RefCell(RefCell&& p) {
+	explicit RefCell(RefCell&& p) {
 		auto i = p.cnt_.exchange(-2);
 		// -2 indicates that the moved RefCell have two mutable
 		// references, thus invalidating it
@@ -280,7 +278,6 @@ class RefCell {
 		cnt_--;
 		mut.p_cnt_ = &cnt_;
 		mut.raw_ = raw_;
-		// raw_ = nullptr;
 		return mut;
 	}
 
