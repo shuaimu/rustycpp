@@ -25,7 +25,7 @@ class Ref {
 	const T& operator*() const { return *raw_; }
 
 	void reset() {
-		auto before_sub = p_cnt_->fetch_sub(1);
+		auto before_sub = (*p_cnt_)--;
 		borrow_verify(before_sub > 0,
 					  "Trying to reset a reference of null pointer");
 		raw_ = nullptr;
@@ -33,7 +33,7 @@ class Ref {
 	}
 	~Ref() {
 		if (p_cnt_ != nullptr) {
-			auto before_sub = p_cnt_->fetch_sub(1);
+			auto before_sub = (*p_cnt_)--;
 			borrow_verify(before_sub > 0, "Trying to deference null pointer");
 			// if the RefCell have not been deleted (not nullptr)
 			// then the RefCell should have at least one reference
@@ -61,16 +61,16 @@ class RefMut {
 
 	T& operator*() { return *raw_; }
 	void reset() {
-		auto i = p_cnt_->fetch_add(1);
-		borrow_verify(i == -1,
+		auto before_add = (*p_cnt_)++;
+		borrow_verify(before_add == -1,
 					  "error in checking just single reference of RefMut");
 		p_cnt_ = nullptr;
 		raw_ = nullptr;
 	}
 	~RefMut() {
 		if (p_cnt_ != nullptr) {
-			auto i = p_cnt_->fetch_add(1);
-			borrow_verify(i == -1,
+			auto before_add = (*p_cnt_)++;
+			borrow_verify(before_add == -1,
 						  "error in checking just single reference of RefMut");
 		}
 	}

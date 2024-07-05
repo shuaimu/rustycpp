@@ -3,6 +3,7 @@
 #include <array> 
 #include "../src/rsptr.hpp"
 using namespace rsptr;
+// #define Rc Arc
 template <typename T>
 using Weak = Rc<T>::Weak;
 using namespace std;

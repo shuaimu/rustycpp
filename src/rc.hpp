@@ -30,9 +30,8 @@ class Rc {
 		}
 
 		~Weak() {
-			if (rc_ != nullptr && rc_->strong_cnt_ == 0 &&
-				--rc_->weak_cnt_ == 0) {
-				rc_->~Rc();
+			if (rc_ != nullptr) {
+				rc_->weak_cnt_--;
 			}
 		}
 
