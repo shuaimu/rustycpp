@@ -4,7 +4,7 @@
 
 ```cpp
 #include "borrow.h"
-using namespace borrow;
+using namespace rsptr;
 
 int main() {
   RefCell<int> owner;

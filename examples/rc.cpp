@@ -1,8 +1,8 @@
 #include <vector>
 #include <iostream>
 #include <array> 
-#include "../borrow.h"
-using namespace borrow;
+#include "../src/rsptr.hpp"
+using namespace rsptr;
 template <typename T>
 using Weak = Rc<T>::Weak;
 using namespace std;
