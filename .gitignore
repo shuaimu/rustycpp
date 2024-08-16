@@ -1,3 +1,6 @@
 .vscode
 *.out
 *.cpp
+!examples/*
+!tests/*
+build
