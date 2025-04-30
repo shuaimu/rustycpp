@@ -50,9 +50,6 @@ This repository includes a C++ implementation of this concept.
 Consider using it instead of `shared_ptr` when appropriate.
 
 
-### TODO the RefCell smart pointers
-
-
 ## Incrementally migrate to Rust (C++/Rust interop)
 Some languages (like D, Zig, and Swift) offer seamless integration with C++. This makes it easier to adopt these languages in existing C++ projects, as you can simply write new code in the chosen language and interact with existing C++ code without friction.
 
@@ -67,3 +64,4 @@ However, if your C++ code follows the guidelines in this document, particularly 
 * Investigate microsoft [proxy](https://github.com/microsoft/proxy). It looks like a promising approach to add polymorphism to POD types. But can it be integrated with cxx/autocxx?  
 * Investigate autocxx. It provides an interesting feature to implement a C++ subclass in Rust. Can it do the reverse (implement a Rust trait in C++)?
 * Multi threading? 
+* Make the RefCell implementation has the same memory layout and APIs as the Rust standard library. Then integrate it into autocxx.  
