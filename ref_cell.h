@@ -7,7 +7,7 @@
 #include <csignal>
 #include <execinfo.h>
 #include <iostream>
-namespace borrow {
+namespace rust {
 
 // Macros for custom error handling
 #define PRINT_STACK_TRACE() \

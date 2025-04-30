@@ -1,30 +1,23 @@
-## RustyCpp: Writing C++ that is easier to debug.
+# RustyCpp: Writing C++ that is easier to debug
 
-This is a style guide to help write C++ that is easier to debug (or have fewer bugs to begin with) by mimicking how Rust does it. 
+This style guide aims to help developers write C++ code that is easier to debug and less prone to bugs by adopting principles from Rust.
 
 ## Being explicit
 
-This is one of the most important philosophies of Rust. It helps avoid errors caused by overlooking the hidden or implicit code.  
+Explicitness is one of Rust's core philosophies. It helps prevent errors that arise from overlooking hidden or implicit code behaviors.
 
-### No computation in constructors/destructors 
-The constructors are limited to initialize (the memory layout of) member variables and that is all. If there is extra to do, write an Init function. If Init needs to be called on member variables, do not do it in the constructor. Instead, do it in an Init function.
+### No computation in constructors/destructors
+Constructors should be limited to initializing member variables and establishing the object's memory layout—nothing more. For additional initialization steps, create a separate `Init()` function. When member variables require initialization, handle this in the `Init()` function rather than in the constructor.
 
-If you have computation in destructor, such as setting a flag or stop a thread, put it in a Destroy function and have it explicitly called.  
+Similarly, if you need computation in a destructor (such as setting flags or stopping threads), implement a `Destroy()` function that must be explicitly called before destruction.
 
 ### Composition over inheritance
-Avoid using inheritance.  
+Avoid inheritance whenever possible.
 
-We still want polymorphism. In this case, limit the inheritance to just one layer: abstract class and implementation class. 
-The abstract class has no member variables and all its member functions are pure virtual with =0.
-The implementation class is final and cannot be inherited further. 
+When polymorphism is necessary, limit inheritance to a single layer: an abstract base class and its implementation class. The abstract class should contain no member variables, and all its member functions should be pure virtual (declared with `= 0`). The implementation class should be marked as `final` to prevent further inheritance.
 
 ### Use move and disallow copy assignment/constructor
-Except primitive types, use `move` instead of copy. There are multiple ways to disallow copy constructor, our convention is inheriting the `boost::noncopyable` class.
-```
-class X: private boost::noncopyable {};
-```
-
-If copy from an object is necessary, implement move constructor and a `Clone` function. 
+Except for primitive types, prefer using `move` instead of copy operations. There are multiple ways to disallow copy constructors; our convention is to inherit from the `boost::noncopyable` class:
 
 ```
 Object obj1 = move(obj2.Clone()); // move can be omitted because it is already a right value. 
@@ -39,35 +32,34 @@ Try to use [POD](https://en.cppreference.com/w/cpp/named_req/PODType) types if p
 ## Memory safety, pointers, and references
 
 ### No raw pointers
-
-Do not use raw pointers unless it is required in system calls, in which case wrapping all pointers in a separate class. 
+Avoid using raw pointers except when required by system calls, in which case wrap them in a dedicated class.
 
 ### Ownership model: unique_ptr and shared_ptr
 
-Try to program with the "owenership" model, that each object is owned by another object or function for its lifetime. 
+Program with the ownership model, where each object is owned by another object or function throughout its lifetime.
 
-To transfer ownership, use unique_ptr to wrap the object. 
+To transfer ownership, wrap objects in `unique_ptr`.
 
-Try to avoid shared ownership. This is the hardest part with the ownership model, but in most cases it is achievable. If shared ownership is really necessary, consider using shared_ptr but remember that shared_ptr has non-neglible performance cost because it uses atomic instructions for reference counting (it is like Arc not Rc).   
+Avoid shared ownership whenever possible. While this can be challenging, it's achievable in most cases. If shared ownership is truly necessary, consider using `shared_ptr`, but be aware that it incurs a non-negligible performance cost due to atomic reference counting operations (similar to Rust's `Arc` rather than `Rc`).
 
 ### Borrow checking
 The closest thing that the C++ has to the borrow checking would be the [Circle C++](https://www.circle-lang.org/site/index.html). But it is still experimental and not open sourced. If we stick to original C++, compile time borrow checking seems impossible, [link](https://docs.google.com/document/d/e/2PACX-1vSt2VB1zQAJ6JDMaIA9PlmEgBxz2K5Tx6w2JqJNeYCy0gU4aoubdTxlENSKNSrQ2TXqPWcuwtXe6PlO/pub). 
 
-The next best thing we can do is a runtime checking, basically the `RefCell` smart pointer in Rust. 
-The repo has an implementation of it in C++. 
-Try to use it over shared_ptr.   
+The next best alternative is runtime checking, similar to Rust's `RefCell` smart pointer. 
+This repository includes a C++ implementation of this concept.
+Consider using it instead of `shared_ptr` when appropriate.
 
 
 ### TODO the RefCell smart pointers
 
 
 ## Incrementally migrate to Rust (C++/Rust interop)
-Some language (like D, Zig, Swift) has seamless integration support for C++. It then would be easier to adopt the new language in a C++ project. You will just need to write new code in that language and interop with existing C++ seamlessly. 
+Some languages (like D, Zig, and Swift) offer seamless integration with C++. This makes it easier to adopt these languages in existing C++ projects, as you can simply write new code in the chosen language and interact with existing C++ code without friction.
 
-Unfortunately, Rust does not support this (perhaps intentionally because it risks downgrading Rust to a second-class citizen in C++ ecosystem), [link](https://internals.rust-lang.org/t/true-c-interop-built-into-the-language/19175/5).
-The current best way to do C++/Rust interop is through cxx/autocxx crates. 
-The interop is a semi-automated process based on the C FFIs that both C++ and Rust support. 
-However, if the rest of the C++ code follow this guideline, especially if all types are POD, the interop experience should be very close to a seamless integration that other languages have (yet to verify).  
+Unfortunately, Rust does not support this level of integration (perhaps intentionally to avoid becoming a secondary option in the C++ ecosystem), as discussed [here](https://internals.rust-lang.org/t/true-c-interop-built-into-the-language/19175/5).
+Currently, the best approach for C++/Rust interoperability is through the cxx/autocxx crates.
+This interoperability is implemented as a semi-automated process based on C FFIs (Foreign Function Interfaces) that both C++ and Rust support.
+However, if your C++ code follows the guidelines in this document, particularly if all types are POD, the interoperability experience can approach the seamless integration offered by other languages (though this remains to be verified).
 
 
 ## TODO 
