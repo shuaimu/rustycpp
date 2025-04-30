@@ -20,6 +20,11 @@ When polymorphism is necessary, limit inheritance to a single layer: an abstract
 Except for primitive types, prefer using `move` instead of copy operations. There are multiple ways to disallow copy constructors; our convention is to inherit from the `boost::noncopyable` class:
 
 ```
+class X: private boost::noncopyable {};
+```
+
+If copy from an object is necessary, implement move constructor and a `Clone` function. 
+```
 Object obj1 = move(obj2.Clone()); // move can be omitted because it is already a right value. 
 ```
 
