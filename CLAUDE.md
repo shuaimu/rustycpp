@@ -4,29 +4,34 @@
 
 This is a Rust-based static analyzer that applies Rust's ownership and borrowing rules to C++ code. The goal is to catch memory safety issues at compile-time without runtime overhead.
 
-## Current State
+## Current State (Updated: Session completed reference checking implementation)
 
-### What's Implemented
+### What's Fully Implemented ✅
+- ✅ **Complete reference borrow checking** for C++ const and mutable references
+  - Multiple immutable borrows allowed
+  - Single mutable borrow enforced
+  - No mixing of mutable and immutable borrows
+  - Clear error messages with variable names
 - ✅ Basic project structure with modular architecture
-- ✅ LibClang integration for parsing C++ AST
-- ✅ Initial IR (Intermediate Representation) design
-- ✅ Ownership tracking framework
-- ✅ Borrow checking skeleton
-- ✅ Z3 solver integration for constraints
+- ✅ LibClang integration for parsing C++ AST (including reference bindings)
+- ✅ IR (Intermediate Representation) with ownership tracking
+- ✅ Ownership state tracking (Owned, Borrowed, Moved)
+- ✅ Z3 solver integration for constraints (ready for future use)
 - ✅ Colored diagnostic output
 - ✅ CLI interface with clap
+- ✅ **Comprehensive test suite**: 42 tests (29 unit, 13 integration)
 
-### What's Partially Implemented
-- ⚠️ AST to IR conversion (basic functions only)
-- ⚠️ Move semantics detection (structure in place, logic incomplete)
-- ⚠️ Lifetime analysis (framework exists, inference not complete)
+### What's Partially Implemented ⚠️
+- ⚠️ Move semantics detection (works for simple moves, not std::move)
+- ⚠️ Lifetime analysis (framework exists, scope tracking not complete)
+- ⚠️ AST to IR conversion (works for basic constructs, references, assignments)
 
-### What's Not Implemented Yet
+### What's Not Implemented Yet ❌
+- ❌ std::unique_ptr and std::shared_ptr analysis
 - ❌ Full C++ construct support (templates, lambdas, etc.)
-- ❌ Smart pointer analysis (unique_ptr, shared_ptr)
 - ❌ Multi-file analysis
-- ❌ Actual error detection in the analysis phase
-- ❌ Source location tracking in errors
+- ❌ Scope-based lifetime tracking
+- ❌ Dangling reference detection
 
 ## Key Technical Decisions
 
@@ -60,9 +65,9 @@ src/
 ## Environment Setup Required
 
 ```bash
-# macOS
-export Z3_SYS_Z3_HEADER=/opt/homebrew/opt/z3/include/z3.h
-export DYLD_LIBRARY_PATH=/opt/homebrew/opt/llvm/lib:$DYLD_LIBRARY_PATH
+# macOS (updated paths)
+export Z3_SYS_Z3_HEADER=/opt/homebrew/include/z3.h
+export DYLD_LIBRARY_PATH=/opt/homebrew/Cellar/llvm/19.1.7/lib:$DYLD_LIBRARY_PATH
 
 # Linux
 export Z3_SYS_Z3_HEADER=/usr/include/z3.h
@@ -71,21 +76,29 @@ export LD_LIBRARY_PATH=/usr/lib/llvm-14/lib:$LD_LIBRARY_PATH
 
 ## Known Issues
 
-1. **Include Paths**: Standard library headers aren't found by default
-2. **Incomplete Analysis**: The analysis phase doesn't actually detect errors yet
-3. **Limited C++ Support**: Only basic functions are parsed correctly
+1. **Include Paths**: Standard library headers (like `<iostream>`) aren't found by default
+2. **Scope Tracking**: Borrow checking doesn't track scopes, all borrows are considered function-wide
+3. **Limited C++ Support**: Templates, lambdas, and advanced C++ features not supported yet
 
 ## Testing Commands
 
 ```bash
+# Set environment variables first (macOS)
+export Z3_SYS_Z3_HEADER=/opt/homebrew/include/z3.h
+export DYLD_LIBRARY_PATH=/opt/homebrew/Cellar/llvm/19.1.7/lib:$DYLD_LIBRARY_PATH
+
 # Build the project
 cargo build
 
-# Run on simple test (works)
-cargo run -- examples/simple_test.cpp
+# Run on example files
+cargo run -- examples/reference_demo.cpp
+cargo run -- examples/test_simple_refs.cpp
 
-# Run tests
+# Run all tests (42 tests total)
 cargo test
+
+# Run specific test with output
+cargo test test_multiple_mutable_borrows -- --nocapture
 
 # Check for warnings
 cargo clippy
@@ -94,20 +107,20 @@ cargo clippy
 ## Next Priority Tasks
 
 ### High Priority
-1. **Complete AST to IR conversion** for basic C++ constructs:
-   - Variable declarations with initialization
-   - Assignments and moves
-   - Function calls
-   - Basic control flow
+1. **Implement scope-based lifetime tracking**:
+   - Track variable scopes (blocks, functions)
+   - Allow borrows to end when references go out of scope
+   - Enable more precise borrow checking
 
-2. **Implement use-after-move detection**:
+2. **Add std::unique_ptr support**:
+   - Parse and understand std::unique_ptr declarations
    - Track std::move() calls
-   - Mark variables as moved
-   - Detect usage of moved variables
+   - Detect use-after-move for smart pointers
 
-3. **Add source location tracking**:
-   - Preserve line/column info from AST
-   - Include in error messages
+3. **Implement dangling reference detection**:
+   - Track when references outlive their targets
+   - Detect returning references to local variables
+   - Add lifetime inference
 
 ### Medium Priority
 1. **Smart pointer support**:
@@ -186,9 +199,30 @@ When implementing new features, consider:
 ## Contact with Original Requirements
 
 The user wants a compile-time checker for C++ that enforces Rust-like borrow checking rules. Key requirements:
-- Standalone static analyzer (not a compiler plugin)
-- Detect use-after-move
-- Detect multiple mutable borrows
-- Track lifetimes
-- Provide clear error messages
-- Support gradual adoption in existing codebases
+- ✅ Standalone static analyzer (not a compiler plugin) - **DONE**
+- ⚠️ Detect use-after-move - **Partial** (simple moves work, std::move not yet)
+- ✅ Detect multiple mutable borrows - **DONE**
+- ⚠️ Track lifetimes - **Partial** (framework exists, needs scope tracking)
+- ✅ Provide clear error messages - **DONE**
+- ✅ Support gradual adoption in existing codebases - **DONE** (can analyze individual files)
+
+## Example Output
+
+```
+C++ Borrow Checker
+Analyzing: examples/reference_demo.cpp
+✗ Found 3 violation(s):
+Cannot create mutable reference to 'value': already mutably borrowed
+Cannot create mutable reference to 'value': already immutably borrowed
+Cannot create immutable reference to 'value': already mutably borrowed
+```
+
+## Session Summary
+
+This session successfully implemented:
+1. Complete reference borrow checking (const and mutable)
+2. Fixed AST parsing to properly extract reference bindings
+3. Added comprehensive test suite (42 tests)
+4. Created example files demonstrating the checker
+5. Fixed all compilation errors and warnings
+6. Documented the implementation thoroughly
