@@ -1,0 +1,395 @@
+use crate::parser::CppAst;
+use petgraph::graph::{DiGraph, NodeIndex};
+use std::collections::HashMap;
+
+#[derive(Debug, Clone)]
+pub struct IrProgram {
+    pub functions: Vec<IrFunction>,
+    #[allow(dead_code)]
+    pub ownership_graph: OwnershipGraph,
+}
+
+#[derive(Debug, Clone)]
+pub struct IrFunction {
+    #[allow(dead_code)]
+    pub name: String,
+    pub cfg: ControlFlowGraph,
+    pub variables: HashMap<String, VariableInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VariableInfo {
+    #[allow(dead_code)]
+    pub name: String,
+    #[allow(dead_code)]
+    pub ty: VariableType,
+    pub ownership: OwnershipState,
+    #[allow(dead_code)]
+    pub lifetime: Option<Lifetime>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
+pub enum VariableType {
+    Owned(String),           // Type name
+    Reference(String),       // Referenced type
+    MutableReference(String),
+    UniquePtr(String),
+    SharedPtr(String),
+    Raw(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
+pub enum OwnershipState {
+    Owned,
+    Borrowed(BorrowKind),
+    Moved,
+    Uninitialized,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
+pub enum BorrowKind {
+    Immutable,
+    Mutable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Lifetime {
+    pub name: String,
+    pub scope_start: usize,
+    pub scope_end: usize,
+}
+
+pub type ControlFlowGraph = DiGraph<BasicBlock, ()>;
+pub type OwnershipGraph = DiGraph<String, OwnershipEdge>;
+
+#[derive(Debug, Clone)]
+pub struct BasicBlock {
+    #[allow(dead_code)]
+    pub id: usize,
+    pub statements: Vec<IrStatement>,
+    #[allow(dead_code)]
+    pub terminator: Option<Terminator>,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum IrStatement {
+    Assign {
+        lhs: String,
+        rhs: IrExpression,
+    },
+    Move {
+        from: String,
+        to: String,
+    },
+    Borrow {
+        from: String,
+        to: String,
+        kind: BorrowKind,
+    },
+    Drop(String),
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum IrExpression {
+    Variable(String),
+    Move(String),
+    Borrow(String, BorrowKind),
+    New(String),  // Allocation
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum Terminator {
+    Return(Option<String>),
+    Jump(NodeIndex),
+    Branch {
+        condition: String,
+        then_block: NodeIndex,
+        else_block: NodeIndex,
+    },
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum OwnershipEdge {
+    Owns,
+    Borrows,
+    MutBorrows,
+}
+
+pub fn build_ir(ast: CppAst) -> Result<IrProgram, String> {
+    let mut functions = Vec::new();
+    let ownership_graph = DiGraph::new();
+    
+    for func in ast.functions {
+        let ir_func = convert_function(&func)?;
+        functions.push(ir_func);
+    }
+    
+    Ok(IrProgram {
+        functions,
+        ownership_graph,
+    })
+}
+
+fn convert_function(func: &crate::parser::Function) -> Result<IrFunction, String> {
+    let mut cfg = DiGraph::new();
+    let mut variables = HashMap::new();
+    
+    // Create entry block and convert statements
+    let mut statements = Vec::new();
+    for stmt in &func.body {
+        if let Some(ir_stmts) = convert_statement(stmt, &mut variables)? {
+            statements.extend(ir_stmts);
+        }
+    }
+    
+    let entry_block = BasicBlock {
+        id: 0,
+        statements,
+        terminator: None,
+    };
+    
+    let _entry_node = cfg.add_node(entry_block);
+    
+    // Process parameters
+    for param in &func.parameters {
+        let (var_type, ownership) = if param.is_unique_ptr {
+            (VariableType::UniquePtr(param.type_name.clone()), OwnershipState::Owned)
+        } else if param.is_reference {
+            if param.is_const {
+                (VariableType::Reference(param.type_name.clone()), 
+                 OwnershipState::Borrowed(BorrowKind::Immutable))
+            } else {
+                (VariableType::MutableReference(param.type_name.clone()),
+                 OwnershipState::Borrowed(BorrowKind::Mutable))
+            }
+        } else {
+            (VariableType::Owned(param.type_name.clone()), OwnershipState::Owned)
+        };
+        
+        variables.insert(
+            param.name.clone(),
+            VariableInfo {
+                name: param.name.clone(),
+                ty: var_type,
+                ownership,
+                lifetime: None,
+            },
+        );
+    }
+    
+    Ok(IrFunction {
+        name: func.name.clone(),
+        cfg,
+        variables,
+    })
+}
+
+fn convert_statement(
+    stmt: &crate::parser::Statement,
+    variables: &mut HashMap<String, VariableInfo>,
+) -> Result<Option<Vec<IrStatement>>, String> {
+    use crate::parser::Statement;
+    
+    match stmt {
+        Statement::VariableDecl(var) => {
+            let (var_type, ownership) = if var.is_unique_ptr {
+                (VariableType::UniquePtr(var.type_name.clone()), OwnershipState::Owned)
+            } else if var.is_reference {
+                if var.is_const {
+                    (VariableType::Reference(var.type_name.clone()),
+                     OwnershipState::Uninitialized) // Will be set when bound
+                } else {
+                    (VariableType::MutableReference(var.type_name.clone()),
+                     OwnershipState::Uninitialized)
+                }
+            } else {
+                (VariableType::Owned(var.type_name.clone()), OwnershipState::Owned)
+            };
+            
+            variables.insert(
+                var.name.clone(),
+                VariableInfo {
+                    name: var.name.clone(),
+                    ty: var_type,
+                    ownership,
+                    lifetime: None,
+                },
+            );
+            Ok(None)
+        }
+        Statement::ReferenceBinding { name, target, is_mutable, .. } => {
+            // Convert to a borrow statement
+            if let crate::parser::Expression::Variable(target_var) = target {
+                let kind = if *is_mutable {
+                    BorrowKind::Mutable
+                } else {
+                    BorrowKind::Immutable
+                };
+                
+                // Update the reference variable's ownership state and type
+                if let Some(var_info) = variables.get_mut(name) {
+                    var_info.ownership = OwnershipState::Borrowed(kind.clone());
+                    // Update the type to reflect this is a reference
+                    if *is_mutable {
+                        if let VariableType::Owned(type_name) = &var_info.ty {
+                            var_info.ty = VariableType::MutableReference(type_name.clone());
+                        }
+                    } else {
+                        if let VariableType::Owned(type_name) = &var_info.ty {
+                            var_info.ty = VariableType::Reference(type_name.clone());
+                        }
+                    }
+                }
+                
+                Ok(Some(vec![IrStatement::Borrow {
+                    from: target_var.clone(),
+                    to: name.clone(),
+                    kind,
+                }]))
+            } else {
+                Ok(None)
+            }
+        }
+        Statement::Assignment { lhs, rhs, .. } => {
+            // Handle assignments that might involve references
+            if let crate::parser::Expression::Variable(rhs_var) = rhs {
+                // Check if this is a move or a copy
+                if let Some(rhs_info) = variables.get(rhs_var) {
+                    match &rhs_info.ty {
+                        VariableType::UniquePtr(_) => {
+                            // This is a move
+                            Ok(Some(vec![IrStatement::Move {
+                                from: rhs_var.clone(),
+                                to: lhs.clone(),
+                            }]))
+                        }
+                        _ => {
+                            // Regular assignment (copy)
+                            Ok(Some(vec![IrStatement::Assign {
+                                lhs: lhs.clone(),
+                                rhs: IrExpression::Variable(rhs_var.clone()),
+                            }]))
+                        }
+                    }
+                } else {
+                    Ok(None)
+                }
+            } else {
+                Ok(None)
+            }
+        }
+        _ => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::{Function, Variable, SourceLocation};
+
+    fn create_test_function(name: &str) -> Function {
+        Function {
+            name: name.to_string(),
+            parameters: vec![],
+            return_type: "void".to_string(),
+            body: vec![],
+            location: SourceLocation {
+                file: "test.cpp".to_string(),
+                line: 1,
+                column: 1,
+            },
+        }
+    }
+
+    fn create_test_variable(name: &str, type_name: &str, is_unique_ptr: bool) -> Variable {
+        Variable {
+            name: name.to_string(),
+            type_name: type_name.to_string(),
+            is_reference: false,
+            is_pointer: false,
+            is_const: false,
+            is_unique_ptr,
+            is_shared_ptr: false,
+            location: SourceLocation {
+                file: "test.cpp".to_string(),
+                line: 1,
+                column: 1,
+            },
+        }
+    }
+
+    #[test]
+    fn test_build_empty_ir() {
+        let ast = crate::parser::CppAst::new();
+        let result = build_ir(ast);
+        
+        assert!(result.is_ok());
+        let ir = result.unwrap();
+        assert_eq!(ir.functions.len(), 0);
+    }
+
+    #[test]
+    fn test_build_ir_with_function() {
+        let mut ast = crate::parser::CppAst::new();
+        ast.functions.push(create_test_function("test_func"));
+        
+        let result = build_ir(ast);
+        assert!(result.is_ok());
+        
+        let ir = result.unwrap();
+        assert_eq!(ir.functions.len(), 1);
+        assert_eq!(ir.functions[0].name, "test_func");
+    }
+
+    #[test]
+    fn test_variable_type_classification() {
+        let unique_var = create_test_variable("ptr", "std::unique_ptr<int>", true);
+        let mut ast = crate::parser::CppAst::new();
+        let mut func = create_test_function("test");
+        func.parameters.push(unique_var);
+        ast.functions.push(func);
+        
+        let result = build_ir(ast);
+        assert!(result.is_ok());
+        
+        let ir = result.unwrap();
+        let var_info = ir.functions[0].variables.get("ptr").unwrap();
+        assert!(matches!(var_info.ty, VariableType::UniquePtr(_)));
+    }
+
+    #[test]
+    fn test_ownership_state_initialization() {
+        let var = create_test_variable("x", "int", false);
+        let mut ast = crate::parser::CppAst::new();
+        let mut func = create_test_function("test");
+        func.parameters.push(var);
+        ast.functions.push(func);
+        
+        let result = build_ir(ast);
+        assert!(result.is_ok());
+        
+        let ir = result.unwrap();
+        let var_info = ir.functions[0].variables.get("x").unwrap();
+        assert_eq!(var_info.ownership, OwnershipState::Owned);
+    }
+
+    #[test]
+    fn test_lifetime_creation() {
+        let lifetime = Lifetime {
+            name: "a".to_string(),
+            scope_start: 0,
+            scope_end: 10,
+        };
+        
+        assert_eq!(lifetime.name, "a");
+        assert_eq!(lifetime.scope_start, 0);
+        assert_eq!(lifetime.scope_end, 10);
+    }
+}
