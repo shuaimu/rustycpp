@@ -1,4 +1,5 @@
 use crate::ir::{IrProgram, IrFunction, OwnershipState, BorrowKind};
+use crate::parser::HeaderCache;
 use std::collections::{HashMap, HashSet};
 
 pub mod ownership;
@@ -25,6 +26,23 @@ pub enum ErrorKind {
 
 pub fn check_borrows(program: IrProgram) -> Result<Vec<String>, String> {
     let mut errors = Vec::new();
+    
+    for function in &program.functions {
+        let function_errors = check_function(function)?;
+        errors.extend(function_errors);
+    }
+    
+    Ok(errors)
+}
+
+pub fn check_borrows_with_annotations(program: IrProgram, header_cache: HeaderCache) -> Result<Vec<String>, String> {
+    let mut errors = Vec::new();
+    
+    // If we have header annotations, use them for cross-file checking
+    if header_cache.has_signatures() {
+        // TODO: Use header annotations to validate function calls
+        // For now, just run regular borrow checking
+    }
     
     for function in &program.functions {
         let function_errors = check_function(function)?;

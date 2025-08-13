@@ -1,32 +1,199 @@
 use clang::Entity;
+use regex::Regex;
 
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub enum Annotation {
-    Owns,
-    Borrows(Option<String>),      // lifetime parameter
-    MutBorrows(Option<String>),    // lifetime parameter
-    Lifetime(String),               // lifetime name
+#[derive(Debug, Clone, PartialEq)]
+pub enum LifetimeAnnotation {
+    // 'a, 'b, etc - just the lifetime name
+    Lifetime(String),
+    // &'a T - immutable reference with lifetime
+    Ref(String),
+    // &'a mut T - mutable reference with lifetime  
+    MutRef(String),
+    // owned - for ownership transfer
+    Owned,
 }
 
-#[allow(dead_code)]
-pub fn extract_annotations(entity: &Entity) -> Vec<Annotation> {
-    let mut annotations = Vec::new();
-    
-    // Look for C++ attributes like [[owns]], [[borrows]]
+#[derive(Debug, Clone)]
+pub struct FunctionSignature {
+    pub name: String,
+    pub return_lifetime: Option<LifetimeAnnotation>,
+    pub param_lifetimes: Vec<Option<LifetimeAnnotation>>,
+    pub lifetime_bounds: Vec<LifetimeBound>, // e.g., 'a: 'b
+}
+
+#[derive(Debug, Clone)]
+pub struct LifetimeBound {
+    pub longer: String,  // 'a in 'a: 'b
+    pub shorter: String, // 'b in 'a: 'b
+}
+
+pub fn extract_annotations(entity: &Entity) -> Option<FunctionSignature> {
     if let Some(comment) = entity.get_comment() {
-        // Parse annotations from comments for MVP
-        // In future, we'd use actual C++ attributes
-        if comment.contains("@owns") {
-            annotations.push(Annotation::Owns);
+        if let Some(name) = entity.get_name() {
+            parse_lifetime_annotations(&comment, name)
+        } else {
+            None
         }
-        if comment.contains("@borrows") {
-            annotations.push(Annotation::Borrows(None));
+    } else {
+        None
+    }
+}
+
+// Parse annotations like:
+// @lifetime: 'a -> &'a T
+// @lifetime: ('a, 'b) -> &'a T where 'a: 'b
+// @lifetime: owned
+fn parse_lifetime_annotations(comment: &str, func_name: String) -> Option<FunctionSignature> {
+    // Look for @lifetime annotation
+    let lifetime_re = Regex::new(r"@lifetime:\s*(.+)").ok()?;
+    
+    if let Some(captures) = lifetime_re.captures(comment) {
+        let annotation_str = captures.get(1)?.as_str();
+        
+        // Parse the annotation string
+        let mut signature = FunctionSignature {
+            name: func_name,
+            return_lifetime: None,
+            param_lifetimes: Vec::new(),
+            lifetime_bounds: Vec::new(),
+        };
+        
+        // Check for where clause
+        let parts: Vec<&str> = annotation_str.split("where").collect();
+        let main_part = parts[0].trim();
+        
+        // Parse lifetime bounds from where clause
+        if parts.len() > 1 {
+            let bounds_str = parts[1].trim();
+            signature.lifetime_bounds = parse_lifetime_bounds(bounds_str);
         }
-        if comment.contains("@mut_borrows") {
-            annotations.push(Annotation::MutBorrows(None));
+        
+        // Parse main lifetime specification
+        if main_part.contains("->") {
+            // Has parameters and return type
+            let arrow_parts: Vec<&str> = main_part.split("->").collect();
+            if arrow_parts.len() == 2 {
+                let params_str = arrow_parts[0].trim();
+                let return_str = arrow_parts[1].trim();
+                
+                // Parse parameters
+                signature.param_lifetimes = parse_param_lifetimes(params_str);
+                
+                // Parse return type
+                signature.return_lifetime = parse_single_lifetime(return_str);
+            }
+        } else {
+            // Just return type
+            signature.return_lifetime = parse_single_lifetime(main_part);
+        }
+        
+        Some(signature)
+    } else {
+        None
+    }
+}
+
+fn parse_param_lifetimes(params_str: &str) -> Vec<Option<LifetimeAnnotation>> {
+    let mut result = Vec::new();
+    
+    // Remove parentheses if present
+    let cleaned = params_str.trim_start_matches('(').trim_end_matches(')');
+    
+    // Split by comma
+    for param in cleaned.split(',') {
+        result.push(parse_single_lifetime(param.trim()));
+    }
+    
+    result
+}
+
+fn parse_single_lifetime(lifetime_str: &str) -> Option<LifetimeAnnotation> {
+    let trimmed = lifetime_str.trim();
+    
+    if trimmed == "owned" {
+        Some(LifetimeAnnotation::Owned)
+    } else if trimmed.starts_with("&'") && trimmed.contains("mut") {
+        // &'a mut T
+        let lifetime_name = extract_lifetime_name(trimmed);
+        lifetime_name.map(|name| LifetimeAnnotation::MutRef(name))
+    } else if trimmed.starts_with("&'") {
+        // &'a T
+        let lifetime_name = extract_lifetime_name(trimmed);
+        lifetime_name.map(|name| LifetimeAnnotation::Ref(name))
+    } else if trimmed.starts_with('\'') {
+        // Just 'a
+        Some(LifetimeAnnotation::Lifetime(trimmed.to_string()))
+    } else {
+        None
+    }
+}
+
+fn extract_lifetime_name(s: &str) -> Option<String> {
+    let re = Regex::new(r"'([a-z][a-z0-9]*)").ok()?;
+    re.captures(s)
+        .and_then(|cap| cap.get(1))
+        .map(|m| m.as_str().to_string())
+}
+
+fn parse_lifetime_bounds(bounds_str: &str) -> Vec<LifetimeBound> {
+    let mut bounds = Vec::new();
+    
+    // Parse patterns like 'a: 'b
+    let bound_re = Regex::new(r"'([a-z][a-z0-9]*)\s*:\s*'([a-z][a-z0-9]*)").unwrap();
+    
+    for cap in bound_re.captures_iter(bounds_str) {
+        if let (Some(longer), Some(shorter)) = (cap.get(1), cap.get(2)) {
+            bounds.push(LifetimeBound {
+                longer: longer.as_str().to_string(),
+                shorter: shorter.as_str().to_string(),
+            });
         }
     }
     
-    annotations
+    bounds
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_parse_simple_lifetime() {
+        let comment = "// @lifetime: &'a";
+        let sig = parse_lifetime_annotations(comment, "test".to_string()).unwrap();
+        
+        assert_eq!(sig.name, "test");
+        assert_eq!(sig.return_lifetime, Some(LifetimeAnnotation::Ref("a".to_string())));
+        assert!(sig.param_lifetimes.is_empty());
+    }
+    
+    #[test]
+    fn test_parse_owned() {
+        let comment = "// @lifetime: owned";
+        let sig = parse_lifetime_annotations(comment, "test".to_string()).unwrap();
+        
+        assert_eq!(sig.return_lifetime, Some(LifetimeAnnotation::Owned));
+    }
+    
+    #[test]
+    fn test_parse_with_params() {
+        let comment = "// @lifetime: (&'a, &'b) -> &'a where 'a: 'b";
+        let sig = parse_lifetime_annotations(comment, "test".to_string()).unwrap();
+        
+        assert_eq!(sig.param_lifetimes.len(), 2);
+        assert_eq!(sig.param_lifetimes[0], Some(LifetimeAnnotation::Ref("a".to_string())));
+        assert_eq!(sig.param_lifetimes[1], Some(LifetimeAnnotation::Ref("b".to_string())));
+        assert_eq!(sig.return_lifetime, Some(LifetimeAnnotation::Ref("a".to_string())));
+        assert_eq!(sig.lifetime_bounds.len(), 1);
+        assert_eq!(sig.lifetime_bounds[0].longer, "a");
+        assert_eq!(sig.lifetime_bounds[0].shorter, "b");
+    }
+    
+    #[test]
+    fn test_parse_mut_ref() {
+        let comment = "// @lifetime: &'a mut";
+        let sig = parse_lifetime_annotations(comment, "test".to_string()).unwrap();
+        
+        assert_eq!(sig.return_lifetime, Some(LifetimeAnnotation::MutRef("a".to_string())));
+    }
 }

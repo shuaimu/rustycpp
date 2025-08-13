@@ -1,0 +1,7 @@
+[
+  {
+    "directory": "/Users/shuai/workspace/rusty/examples/include_test",
+    "file": "src/main.cpp",
+    "command": "clang++ -std=c++17 -I/Users/shuai/workspace/rusty/examples/include_test/include -Iexternal/libs -c src/main.cpp"
+  }
+]

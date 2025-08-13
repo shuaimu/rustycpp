@@ -1,7 +1,9 @@
 use std::path::Path;
 use std::process::Command;
-use tempfile::NamedTempFile;
+use tempfile::{NamedTempFile, TempDir};
 use std::io::Write;
+use std::fs;
+use std::env;
 
 fn run_analyzer(cpp_file: &Path) -> (bool, String) {
     let output = Command::new("cargo")
@@ -324,4 +326,162 @@ fn test_complex_reference_pattern() {
     assert!(output.contains("violation"), "Should detect violation");
     assert!(output.contains("'b'") && output.contains("already mutably borrowed"),
             "Should only error on variable b. Output: {}", output);
+}
+
+#[test]
+fn test_cross_file_header_parsing() {
+    // Create a temporary directory for our test files
+    let temp_dir = TempDir::new().unwrap();
+    
+    // Create a header file with lifetime annotations
+    let header_content = r#"
+#ifndef TEST_H
+#define TEST_H
+
+// @lifetime: &'a
+const int& getRef();
+
+// @lifetime: (&'a) -> &'a
+const int& identity(const int& x);
+
+// @lifetime: owned
+int getValue();
+
+#endif
+"#;
+    
+    let header_path = temp_dir.path().join("test.h");
+    fs::write(&header_path, header_content).unwrap();
+    
+    // Create a C++ file that includes the header
+    let cpp_content = r#"
+#include "test.h"
+
+void test_function() {
+    const int& ref = getRef();
+    int value = getValue();
+    const int& ref2 = identity(ref);
+}
+"#;
+    
+    let cpp_path = temp_dir.path().join("test.cpp");
+    fs::write(&cpp_path, cpp_content).unwrap();
+    
+    // Run the analyzer
+    let (success, output) = run_analyzer(&cpp_path);
+    
+    // Should succeed - no borrow violations
+    assert!(success, "Should successfully analyze file with header. Output: {}", output);
+    assert!(output.contains("No borrow checking violations"), 
+            "Should find no violations. Output: {}", output);
+}
+
+#[test]
+fn test_lifetime_annotation_parsing() {
+    // Create a temporary directory
+    let temp_dir = TempDir::new().unwrap();
+    
+    // Create header with various lifetime annotations
+    let header_content = r#"
+#ifndef LIFETIME_H
+#define LIFETIME_H
+
+// @lifetime: &'a
+const char* getString();
+
+// @lifetime: (&'a, &'b) -> &'a where 'a: 'b
+const char* selectFirst(const char* a, const char* b);
+
+// @lifetime: &'a mut
+char* getMutableString();
+
+// @lifetime: owned
+char* copyString(const char* src);
+
+#endif
+"#;
+    
+    let header_path = temp_dir.path().join("lifetime.h");
+    fs::write(&header_path, header_content).unwrap();
+    
+    // Create C++ file using the header
+    let cpp_content = r#"
+#include "lifetime.h"
+
+void test_lifetimes() {
+    const char* s1 = getString();
+    const char* s2 = getString();
+    
+    const char* selected = selectFirst(s1, s2);
+    
+    char* owned = copyString(s1);
+    
+    char* mut_str = getMutableString();
+    *mut_str = 'x';
+}
+"#;
+    
+    let cpp_path = temp_dir.path().join("test_lifetime.cpp");
+    fs::write(&cpp_path, cpp_content).unwrap();
+    
+    let (success, output) = run_analyzer(&cpp_path);
+    
+    // This should pass as there are no borrow violations
+    assert!(success, "Should handle lifetime annotations. Output: {}", output);
+}
+
+#[test]
+fn test_env_include_paths() {
+    // Create a temporary directory structure
+    let temp_dir = TempDir::new().unwrap();
+    let include_dir = temp_dir.path().join("include");
+    fs::create_dir(&include_dir).unwrap();
+    
+    // Create header with annotations
+    let header_content = r#"
+#ifndef TEST_ENV_H
+#define TEST_ENV_H
+
+// @lifetime: &'a
+const int& getEnvRef();
+
+// @lifetime: owned
+int getEnvValue();
+
+#endif
+"#;
+    
+    let header_path = include_dir.join("test_env.h");
+    fs::write(&header_path, header_content).unwrap();
+    
+    // Create C++ file that uses the header
+    let cpp_content = r#"
+#include <test_env.h>
+
+void test_env() {
+    const int& ref = getEnvRef();
+    int value = getEnvValue();
+}
+"#;
+    
+    let cpp_path = temp_dir.path().join("test_env.cpp");
+    fs::write(&cpp_path, cpp_content).unwrap();
+    
+    // Run analyzer with environment variable set
+    let output = Command::new("cargo")
+        .args(&["run", "--quiet", "--", cpp_path.to_str().unwrap()])
+        .env("CPLUS_INCLUDE_PATH", include_dir.to_str().unwrap())
+        .env("Z3_SYS_Z3_HEADER", "/opt/homebrew/include/z3.h")
+        .env("DYLD_LIBRARY_PATH", "/opt/homebrew/Cellar/llvm/19.1.7/lib")
+        .output()
+        .expect("Failed to execute analyzer");
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let full_output = format!("{}{}", stdout, stderr);
+    
+    assert!(output.status.success(), 
+            "Should successfully use environment include paths. Output: {}", full_output);
+    assert!(full_output.contains("Found 1 include path(s) from environment"),
+            "Should report finding environment paths. Output: {}", full_output);
 }

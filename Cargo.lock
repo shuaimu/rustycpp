@@ -196,6 +196,7 @@ dependencies = [
  "once_cell",
  "petgraph",
  "rayon",
+ "regex",
  "serde",
  "serde_json",
  "tempfile",

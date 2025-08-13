@@ -3,22 +3,34 @@ use std::path::Path;
 
 pub mod ast_visitor;
 pub mod annotations;
+pub mod header_cache;
 
 pub use ast_visitor::{CppAst, Function, Statement, Expression};
+pub use header_cache::HeaderCache;
 #[allow(unused_imports)]
 pub use ast_visitor::{Variable, SourceLocation};
 
 pub fn parse_cpp_file(path: &Path) -> Result<CppAst, String> {
+    parse_cpp_file_with_includes(path, &[])
+}
+
+pub fn parse_cpp_file_with_includes(path: &Path, include_paths: &[std::path::PathBuf]) -> Result<CppAst, String> {
     // Initialize Clang
     let clang = Clang::new()
         .map_err(|e| format!("Failed to initialize Clang: {:?}", e))?;
     
     let index = Index::new(&clang, false, false);
     
+    // Build arguments with include paths
+    let mut args = vec!["-std=c++17".to_string(), "-xc++".to_string()];
+    for include_path in include_paths {
+        args.push(format!("-I{}", include_path.display()));
+    }
+    
     // Parse the translation unit
     let tu = index
         .parser(path)
-        .arguments(&["-std=c++17", "-xc++"])
+        .arguments(&args.iter().map(|s| s.as_str()).collect::<Vec<_>>())
         .parse()
         .map_err(|e| format!("Failed to parse file: {:?}", e))?;
     
