@@ -4,7 +4,7 @@
 
 This is a Rust-based static analyzer that applies Rust's ownership and borrowing rules to C++ code. The goal is to catch memory safety issues at compile-time without runtime overhead.
 
-## Current State (Updated: Advanced lifetime checking completed)
+## Current State (Updated: std::move detection implemented)
 
 ### What's Fully Implemented ✅
 - ✅ **Complete reference borrow checking** for C++ const and mutable references
@@ -12,6 +12,11 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
   - Single mutable borrow enforced
   - No mixing of mutable and immutable borrows
   - Clear error messages with variable names
+- ✅ **std::move detection and use-after-move checking**
+  - Detects std::move() calls in assignments and function arguments
+  - Tracks moved-from state of variables
+  - Reports use-after-move errors
+  - Handles both direct moves and moves in function calls
 - ✅ **Cross-file analysis with lifetime annotations**
   - Rust-like lifetime syntax in headers (`&'a`, `&'a mut`, `owned`)
   - Header parsing and caching system
@@ -34,12 +39,11 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
 - ✅ **Comprehensive test suite**: 56 tests (40 unit, 16 integration)
 
 ### What's Partially Implemented ⚠️
-- ⚠️ Move semantics detection (simple moves work, not std::move)
 - ⚠️ Control flow (basic blocks work, loops/conditionals limited)
+- ⚠️ Reassignment after move (not tracked yet)
 - ⚠️ Method calls (basic support, no virtual functions)
 
 ### What's Not Implemented Yet ❌
-- ❌ **std::move() detection** and use-after-move
 - ❌ **Smart pointers** (std::unique_ptr, std::shared_ptr)
 - ❌ **Templates** (no parsing or instantiation tracking)
 - ❌ **Advanced control flow** (loops, switch, exceptions)

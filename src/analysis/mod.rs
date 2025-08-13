@@ -112,9 +112,15 @@ fn check_function(function: &IrFunction) -> Result<Vec<String>, String> {
                         ));
                     }
                     
-                    // Transfer ownership
-                    ownership_tracker.set_ownership(from.clone(), OwnershipState::Moved);
-                    ownership_tracker.set_ownership(to.clone(), OwnershipState::Owned);
+                    // Handle temporary move markers (from std::move in function calls)
+                    if to.starts_with("_temp_move_") || to.starts_with("_moved_") {
+                        // Just mark the source as moved, don't create the temporary
+                        ownership_tracker.set_ownership(from.clone(), OwnershipState::Moved);
+                    } else {
+                        // Transfer ownership for regular moves
+                        ownership_tracker.set_ownership(from.clone(), OwnershipState::Moved);
+                        ownership_tracker.set_ownership(to.clone(), OwnershipState::Owned);
+                    }
                 }
                 
                 crate::ir::IrStatement::Borrow { from, to, kind } => {
@@ -165,13 +171,23 @@ fn check_function(function: &IrFunction) -> Result<Vec<String>, String> {
                     ownership_tracker.mark_as_reference(to.clone(), *kind == BorrowKind::Mutable);
                 }
                 
-                crate::ir::IrStatement::Assign { lhs, rhs: _ } => {
+                crate::ir::IrStatement::Assign { lhs, rhs } => {
                     // Check if we're trying to modify through a const reference
                     if ownership_tracker.is_reference(lhs) && !ownership_tracker.is_mutable_reference(lhs) {
                         errors.push(format!(
                             "Cannot assign to '{}' through const reference",
                             lhs
                         ));
+                    }
+                    
+                    // Check if the rhs uses a moved variable
+                    if let crate::ir::IrExpression::Variable(rhs_var) = rhs {
+                        if ownership_tracker.get_ownership(rhs_var) == Some(&OwnershipState::Moved) {
+                            errors.push(format!(
+                                "Use after move: variable '{}' has been moved",
+                                rhs_var
+                            ));
+                        }
                     }
                 }
                 

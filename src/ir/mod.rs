@@ -291,44 +291,93 @@ fn convert_statement(
                         Ok(None)
                     }
                 }
-                crate::parser::Expression::FunctionCall { name, args } => {
-                    // Convert function call arguments to strings
-                    let arg_names: Vec<String> = args.iter()
-                        .filter_map(|arg| {
-                            if let crate::parser::Expression::Variable(var) = arg {
-                                Some(var.clone())
-                            } else {
-                                None
+                crate::parser::Expression::Move(inner) => {
+                    // This is an explicit std::move call
+                    if let crate::parser::Expression::Variable(var) = inner.as_ref() {
+                        // Transfer type from source if needed
+                        let source_type = variables.get(var).map(|info| info.ty.clone());
+                        if let Some(var_info) = variables.get_mut(lhs) {
+                            if let Some(ty) = source_type {
+                                var_info.ty = ty;
                             }
-                        })
-                        .collect();
+                        }
+                        Ok(Some(vec![IrStatement::Move {
+                            from: var.clone(),
+                            to: lhs.clone(),
+                        }]))
+                    } else {
+                        // Handle nested expressions if needed
+                        Ok(None)
+                    }
+                }
+                crate::parser::Expression::FunctionCall { name, args } => {
+                    // Convert function call arguments, handling moves
+                    let mut statements = Vec::new();
+                    let mut arg_names = Vec::new();
                     
-                    Ok(Some(vec![IrStatement::CallExpr {
+                    for arg in args {
+                        match arg {
+                            crate::parser::Expression::Variable(var) => {
+                                arg_names.push(var.clone());
+                            }
+                            crate::parser::Expression::Move(inner) => {
+                                if let crate::parser::Expression::Variable(var) = inner.as_ref() {
+                                    // Mark as moved before the call
+                                    statements.push(IrStatement::Move {
+                                        from: var.clone(),
+                                        to: format!("_temp_move_{}", var),
+                                    });
+                                    arg_names.push(var.clone());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    
+                    statements.push(IrStatement::CallExpr {
                         func: name.clone(),
                         args: arg_names,
                         result: Some(lhs.clone()),
-                    }]))
+                    });
+                    
+                    Ok(Some(statements))
                 }
                 _ => Ok(None)
             }
         }
         Statement::FunctionCall { name, args, .. } => {
             // Standalone function call (no assignment)
-            let arg_names: Vec<String> = args.iter()
-                .filter_map(|arg| {
-                    if let crate::parser::Expression::Variable(var) = arg {
-                        Some(var.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            let mut statements = Vec::new();
+            let mut arg_names = Vec::new();
             
-            Ok(Some(vec![IrStatement::CallExpr {
+            // Process arguments, looking for std::move
+            for arg in args {
+                match arg {
+                    crate::parser::Expression::Variable(var) => {
+                        arg_names.push(var.clone());
+                    }
+                    crate::parser::Expression::Move(inner) => {
+                        // Handle std::move in function arguments
+                        if let crate::parser::Expression::Variable(var) = inner.as_ref() {
+                            // First mark the variable as moved
+                            statements.push(IrStatement::Move {
+                                from: var.clone(),
+                                to: format!("_moved_{}", var), // Temporary marker
+                            });
+                            arg_names.push(var.clone());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            
+            statements.push(IrStatement::CallExpr {
                 func: name.clone(),
                 args: arg_names,
                 result: None,
-            }]))
+            });
+            
+            Ok(Some(statements))
         }
         Statement::Return(expr) => {
             let value = expr.as_ref().and_then(|e| {

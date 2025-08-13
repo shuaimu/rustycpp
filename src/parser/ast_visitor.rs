@@ -178,19 +178,27 @@ fn extract_compound_statement(entity: &Entity) -> Vec<Statement> {
                         // Always add the variable declaration first
                         statements.push(Statement::VariableDecl(var.clone()));
                         
-                        // Check if this is a reference binding with initialization
-                        if var.is_reference {
-                            // Try to find what it references
-                            for child in decl_child.get_children() {
-                                if let Some(expr) = extract_expression(&child) {
+                        // Check if this variable has an initializer
+                        for init_child in decl_child.get_children() {
+                            if let Some(expr) = extract_expression(&init_child) {
+                                
+                                // Check if this is a reference binding
+                                if var.is_reference {
                                     statements.push(Statement::ReferenceBinding {
                                         name: var.name.clone(),
                                         target: expr,
                                         is_mutable: !var.is_const,
                                         location: extract_location(&decl_child),
                                     });
-                                    break;
+                                } else {
+                                    // Regular assignment/initialization
+                                    statements.push(Statement::Assignment {
+                                        lhs: var.name.clone(),
+                                        rhs: expr,
+                                        location: extract_location(&decl_child),
+                                    });
                                 }
+                                break;
                             }
                         }
                     }
@@ -283,6 +291,14 @@ fn extract_expression(entity: &Entity) -> Option<Expression> {
                             args.push(expr);
                         }
                     }
+                }
+            }
+            
+            // Check if this is std::move
+            if name == "move" || name == "std::move" || name.ends_with("::move") || name.contains("move") {
+                // std::move takes one argument and we treat it as a Move expression
+                if args.len() == 1 {
+                    return Some(Expression::Move(Box::new(args.into_iter().next().unwrap())));
                 }
             }
             
