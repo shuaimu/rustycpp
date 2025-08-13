@@ -6,6 +6,8 @@ pub mod ownership;
 pub mod borrows;
 pub mod lifetimes;
 pub mod lifetime_checker;
+pub mod scope_lifetime;
+pub mod lifetime_inference;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -45,10 +47,20 @@ pub fn check_borrows_with_annotations(program: IrProgram, header_cache: HeaderCa
         errors.extend(function_errors);
     }
     
+    // Run lifetime inference and validation
+    for function in &program.functions {
+        let inference_errors = lifetime_inference::infer_and_validate_lifetimes(function)?;
+        errors.extend(inference_errors);
+    }
+    
     // If we have header annotations, also check lifetime constraints
     if header_cache.has_signatures() {
         let lifetime_errors = lifetime_checker::check_lifetimes_with_annotations(&program, &header_cache)?;
         errors.extend(lifetime_errors);
+        
+        // Also run scope-based lifetime checking
+        let scope_errors = scope_lifetime::check_scoped_lifetimes(&program, &header_cache)?;
+        errors.extend(scope_errors);
     }
     
     Ok(errors)

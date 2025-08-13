@@ -50,6 +50,11 @@ impl LifetimeScope {
     
     /// Check if lifetime 'a outlives lifetime 'b
     pub fn check_outlives(&self, longer: &str, shorter: &str) -> bool {
+        // If they're the same lifetime, it trivially outlives itself
+        if longer == shorter {
+            return true;
+        }
+        
         // Check explicit constraints
         for constraint in &self.constraints {
             if constraint.longer == longer && constraint.shorter == shorter {
@@ -57,12 +62,34 @@ impl LifetimeScope {
             }
         }
         
-        // If they're the same lifetime, it trivially outlives itself
-        if longer == shorter {
-            return true;
+        // Implement transitive outlives checking
+        // If 'a: 'b and 'b: 'c, then 'a: 'c
+        self.check_outlives_transitive(longer, shorter, &mut HashSet::new())
+    }
+    
+    /// Check outlives relationship with transitive closure
+    fn check_outlives_transitive(&self, longer: &str, shorter: &str, visited: &mut HashSet<String>) -> bool {
+        // Avoid infinite recursion
+        if visited.contains(longer) {
+            return false;
+        }
+        visited.insert(longer.to_string());
+        
+        // Find all lifetimes that 'longer' outlives directly
+        for constraint in &self.constraints {
+            if constraint.longer == longer {
+                // Check if we found the target
+                if constraint.shorter == shorter {
+                    return true;
+                }
+                
+                // Try transitively through this intermediate lifetime
+                if self.check_outlives_transitive(&constraint.shorter, shorter, visited) {
+                    return true;
+                }
+            }
         }
         
-        // TODO: Implement transitive outlives checking
         false
     }
 }
