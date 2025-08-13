@@ -211,16 +211,36 @@ fn extract_compound_statement(entity: &Entity) -> Vec<Statement> {
                 }
             }
             EntityKind::CallExpr => {
-                let name = child
-                    .get_children()
-                    .into_iter()
-                    .find(|c| c.get_kind() == EntityKind::DeclRefExpr)
-                    .and_then(|e| e.get_name())
-                    .unwrap_or_else(|| "unknown".to_string());
+                let children: Vec<Entity> = child.get_children().into_iter().collect();
+                let mut name = "unknown".to_string();
+                let mut args = Vec::new();
+                
+                for c in children {
+                    match c.get_kind() {
+                        EntityKind::DeclRefExpr | EntityKind::UnexposedExpr => {
+                            if name == "unknown" {
+                                if let Some(n) = c.get_name() {
+                                    name = n;
+                                }
+                            } else {
+                                // This is an argument
+                                if let Some(expr) = extract_expression(&c) {
+                                    args.push(expr);
+                                }
+                            }
+                        }
+                        _ => {
+                            // Try to extract as argument
+                            if let Some(expr) = extract_expression(&c) {
+                                args.push(expr);
+                            }
+                        }
+                    }
+                }
                 
                 statements.push(Statement::FunctionCall {
                     name,
-                    args: Vec::new(),
+                    args,
                     location: extract_location(&child),
                 });
             }
@@ -238,6 +258,35 @@ fn extract_expression(entity: &Entity) -> Option<Expression> {
     match entity.get_kind() {
         EntityKind::DeclRefExpr => {
             entity.get_name().map(Expression::Variable)
+        }
+        EntityKind::CallExpr => {
+            // Extract function call as expression
+            let children: Vec<Entity> = entity.get_children().into_iter().collect();
+            let mut name = "unknown".to_string();
+            let mut args = Vec::new();
+            
+            for c in children {
+                match c.get_kind() {
+                    EntityKind::DeclRefExpr | EntityKind::UnexposedExpr => {
+                        if name == "unknown" {
+                            if let Some(n) = c.get_name() {
+                                name = n;
+                            }
+                        } else {
+                            if let Some(expr) = extract_expression(&c) {
+                                args.push(expr);
+                            }
+                        }
+                    }
+                    _ => {
+                        if let Some(expr) = extract_expression(&c) {
+                            args.push(expr);
+                        }
+                    }
+                }
+            }
+            
+            Some(Expression::FunctionCall { name, args })
         }
         EntityKind::UnexposedExpr => {
             // UnexposedExpr often wraps other expressions, so look at its children

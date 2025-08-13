@@ -1,0 +1,318 @@
+use crate::parser::annotations::{LifetimeAnnotation, FunctionSignature, LifetimeBound};
+use crate::parser::HeaderCache;
+use crate::ir::{IrProgram, IrStatement, IrFunction};
+use std::collections::{HashMap, HashSet};
+
+/// Tracks lifetime information for variables in the current scope
+#[derive(Debug, Clone)]
+pub struct LifetimeScope {
+    /// Maps variable names to their lifetimes
+    variable_lifetimes: HashMap<String, String>,
+    /// Active lifetime constraints
+    constraints: Vec<LifetimeBound>,
+    /// Variables that own their data (not references)
+    owned_variables: HashSet<String>,
+}
+
+impl LifetimeScope {
+    pub fn new() -> Self {
+        Self {
+            variable_lifetimes: HashMap::new(),
+            constraints: Vec::new(),
+            owned_variables: HashSet::new(),
+        }
+    }
+    
+    /// Assign a lifetime to a variable
+    pub fn set_lifetime(&mut self, var: String, lifetime: String) {
+        self.variable_lifetimes.insert(var, lifetime);
+    }
+    
+    /// Mark a variable as owned (not a reference)
+    pub fn mark_owned(&mut self, var: String) {
+        self.owned_variables.insert(var);
+    }
+    
+    /// Get the lifetime of a variable
+    pub fn get_lifetime(&self, var: &str) -> Option<&String> {
+        self.variable_lifetimes.get(var)
+    }
+    
+    /// Check if a variable is owned
+    pub fn is_owned(&self, var: &str) -> bool {
+        self.owned_variables.contains(var)
+    }
+    
+    /// Add a lifetime constraint
+    pub fn add_constraint(&mut self, constraint: LifetimeBound) {
+        self.constraints.push(constraint);
+    }
+    
+    /// Check if lifetime 'a outlives lifetime 'b
+    pub fn check_outlives(&self, longer: &str, shorter: &str) -> bool {
+        // Check explicit constraints
+        for constraint in &self.constraints {
+            if constraint.longer == longer && constraint.shorter == shorter {
+                return true;
+            }
+        }
+        
+        // If they're the same lifetime, it trivially outlives itself
+        if longer == shorter {
+            return true;
+        }
+        
+        // TODO: Implement transitive outlives checking
+        false
+    }
+}
+
+/// Check lifetime constraints in a program using header annotations
+pub fn check_lifetimes_with_annotations(
+    program: &IrProgram, 
+    header_cache: &HeaderCache
+) -> Result<Vec<String>, String> {
+    let mut errors = Vec::new();
+    
+    for function in &program.functions {
+        let mut scope = LifetimeScope::new();
+        let function_errors = check_function_lifetimes(function, &mut scope, header_cache)?;
+        errors.extend(function_errors);
+    }
+    
+    Ok(errors)
+}
+
+fn check_function_lifetimes(
+    function: &IrFunction, 
+    scope: &mut LifetimeScope,
+    header_cache: &HeaderCache
+) -> Result<Vec<String>, String> {
+    let mut errors = Vec::new();
+    
+    // Initialize lifetimes for function parameters and variables
+    // For now, give each variable a unique lifetime based on its name
+    for (name, var_info) in &function.variables {
+        match &var_info.ty {
+            crate::ir::VariableType::Reference(_) |
+            crate::ir::VariableType::MutableReference(_) => {
+                // References get a lifetime based on their name
+                scope.set_lifetime(name.clone(), format!("'{}", name));
+            }
+            _ => {
+                // Owned types don't have lifetimes
+                scope.mark_owned(name.clone());
+            }
+        }
+    }
+    
+    // Check each statement in the function
+    for node_idx in function.cfg.node_indices() {
+        let block = &function.cfg[node_idx];
+        
+        for statement in &block.statements {
+            match statement {
+                IrStatement::CallExpr { func, args, result } => {
+                    // Check if we have annotations for this function
+                    if let Some(signature) = header_cache.get_signature(func) {
+                        let call_errors = check_function_call(
+                            func,
+                            args,
+                            result.as_ref(),
+                            signature,
+                            scope
+                        );
+                        errors.extend(call_errors);
+                    }
+                }
+                
+                IrStatement::Borrow { from, to, .. } => {
+                    // When creating a reference, the new reference has the same lifetime
+                    // as the source or a shorter one
+                    if let Some(from_lifetime) = scope.get_lifetime(from) {
+                        scope.set_lifetime(to.clone(), from_lifetime.clone());
+                    } else if scope.is_owned(from) {
+                        // Borrowing from owned data creates a new lifetime
+                        scope.set_lifetime(to.clone(), format!("'{}", to));
+                    }
+                }
+                
+                IrStatement::Return { value } => {
+                    // Check that returned references have appropriate lifetimes
+                    if let Some(value) = value {
+                        let return_errors = check_return_lifetime(value, function, scope);
+                        errors.extend(return_errors);
+                    }
+                }
+                
+                _ => {}
+            }
+        }
+    }
+    
+    Ok(errors)
+}
+
+fn check_function_call(
+    func_name: &str,
+    args: &[String],
+    result: Option<&String>,
+    signature: &FunctionSignature,
+    scope: &LifetimeScope
+) -> Vec<String> {
+    let mut errors = Vec::new();
+    
+    // Check that we have the right number of arguments
+    if args.len() != signature.param_lifetimes.len() {
+        // Signature doesn't match, skip lifetime checking
+        return errors;
+    }
+    
+    // Collect the actual lifetimes of arguments
+    let mut arg_lifetimes = Vec::new();
+    for (i, arg) in args.iter().enumerate() {
+        if let Some(lifetime) = scope.get_lifetime(arg) {
+            arg_lifetimes.push(Some(lifetime.clone()));
+        } else if scope.is_owned(arg) {
+            arg_lifetimes.push(None); // Owned value
+        } else {
+            arg_lifetimes.push(Some(format!("'arg{}", i)));
+        }
+    }
+    
+    // Check parameter lifetime requirements
+    for (i, (arg, expected)) in args.iter().zip(&signature.param_lifetimes).enumerate() {
+        if let Some(expected_lifetime) = expected {
+            match expected_lifetime {
+                LifetimeAnnotation::Ref(expected) | LifetimeAnnotation::MutRef(expected) => {
+                    // The argument must be a reference with appropriate lifetime
+                    if scope.is_owned(arg) {
+                        errors.push(format!(
+                            "Function '{}' expects a reference for parameter {}, but '{}' is owned",
+                            func_name, i + 1, arg
+                        ));
+                    }
+                }
+                LifetimeAnnotation::Owned => {
+                    // The argument should transfer ownership
+                    if !scope.is_owned(arg) {
+                        errors.push(format!(
+                            "Function '{}' expects ownership of parameter {}, but '{}' is a reference",
+                            func_name, i + 1, arg
+                        ));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    
+    // Check lifetime bounds
+    for bound in &signature.lifetime_bounds {
+        // Map lifetime names from signature to actual argument lifetimes
+        let longer_lifetime = map_lifetime_to_actual(&bound.longer, &arg_lifetimes);
+        let shorter_lifetime = map_lifetime_to_actual(&bound.shorter, &arg_lifetimes);
+        
+        if let (Some(longer), Some(shorter)) = (longer_lifetime, shorter_lifetime) {
+            if !scope.check_outlives(&longer, &shorter) {
+                errors.push(format!(
+                    "Lifetime constraint violated in call to '{}': '{}' must outlive '{}'",
+                    func_name, longer, shorter
+                ));
+            }
+        }
+    }
+    
+    // Check return lifetime
+    if let (Some(result_var), Some(return_lifetime)) = (result, &signature.return_lifetime) {
+        match return_lifetime {
+            LifetimeAnnotation::Ref(ret_lifetime) | LifetimeAnnotation::MutRef(ret_lifetime) => {
+                // The return value is a reference that borrows from one of the parameters
+                // Map the return lifetime to the actual argument lifetime
+                let actual_lifetime = map_lifetime_to_actual(ret_lifetime, &arg_lifetimes);
+                if let Some(lifetime) = actual_lifetime {
+                    // The result variable gets this lifetime
+                    // Note: We're not modifying scope here as it's borrowed
+                    // In a real implementation, we'd need mutable access
+                }
+            }
+            LifetimeAnnotation::Owned => {
+                // The return value is owned, no lifetime constraints
+            }
+            _ => {}
+        }
+    }
+    
+    errors
+}
+
+fn check_return_lifetime(
+    value: &str,
+    function: &IrFunction,
+    scope: &LifetimeScope
+) -> Vec<String> {
+    let mut errors = Vec::new();
+    
+    // Check if we're returning a reference to a local variable
+    if let Some(lifetime) = scope.get_lifetime(value) {
+        // Check if this lifetime is tied to a local variable
+        for (var_name, _) in &function.variables {
+            if lifetime.contains(var_name) && !is_parameter(var_name, function) {
+                errors.push(format!(
+                    "Returning reference to local variable '{}' - this will create a dangling reference",
+                    var_name
+                ));
+            }
+        }
+    }
+    
+    errors
+}
+
+fn is_parameter(var_name: &str, function: &IrFunction) -> bool {
+    // Check if the variable is a function parameter
+    // In a real implementation, we'd track this properly
+    // For now, assume variables starting with "param" are parameters
+    var_name.starts_with("param") || var_name.starts_with("arg")
+}
+
+fn map_lifetime_to_actual(lifetime_name: &str, arg_lifetimes: &[Option<String>]) -> Option<String> {
+    // Map lifetime parameter names like 'a, 'b to actual argument lifetimes
+    match lifetime_name {
+        "a" => arg_lifetimes.get(0).and_then(|l| l.clone()),
+        "b" => arg_lifetimes.get(1).and_then(|l| l.clone()),
+        "c" => arg_lifetimes.get(2).and_then(|l| l.clone()),
+        _ => Some(format!("'{}", lifetime_name)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_lifetime_scope() {
+        let mut scope = LifetimeScope::new();
+        
+        scope.set_lifetime("ref1".to_string(), "'a".to_string());
+        scope.mark_owned("value".to_string());
+        
+        assert_eq!(scope.get_lifetime("ref1"), Some(&"'a".to_string()));
+        assert!(scope.is_owned("value"));
+        assert!(!scope.is_owned("ref1"));
+    }
+    
+    #[test]
+    fn test_outlives_checking() {
+        let mut scope = LifetimeScope::new();
+        
+        scope.add_constraint(LifetimeBound {
+            longer: "a".to_string(),
+            shorter: "b".to_string(),
+        });
+        
+        assert!(scope.check_outlives("a", "b"));
+        assert!(scope.check_outlives("a", "a")); // Self outlives
+        assert!(!scope.check_outlives("b", "a")); // Not declared
+    }
+}

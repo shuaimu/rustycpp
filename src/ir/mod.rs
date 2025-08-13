@@ -90,6 +90,14 @@ pub enum IrStatement {
         to: String,
         kind: BorrowKind,
     },
+    CallExpr {
+        func: String,
+        args: Vec<String>,
+        result: Option<String>,
+    },
+    Return {
+        value: Option<String>,
+    },
     Drop(String),
 }
 
@@ -258,32 +266,80 @@ fn convert_statement(
             }
         }
         Statement::Assignment { lhs, rhs, .. } => {
-            // Handle assignments that might involve references
-            if let crate::parser::Expression::Variable(rhs_var) = rhs {
-                // Check if this is a move or a copy
-                if let Some(rhs_info) = variables.get(rhs_var) {
-                    match &rhs_info.ty {
-                        VariableType::UniquePtr(_) => {
-                            // This is a move
-                            Ok(Some(vec![IrStatement::Move {
-                                from: rhs_var.clone(),
-                                to: lhs.clone(),
-                            }]))
+            // Handle assignments that might involve references or function calls
+            match rhs {
+                crate::parser::Expression::Variable(rhs_var) => {
+                    // Check if this is a move or a copy
+                    if let Some(rhs_info) = variables.get(rhs_var) {
+                        match &rhs_info.ty {
+                            VariableType::UniquePtr(_) => {
+                                // This is a move
+                                Ok(Some(vec![IrStatement::Move {
+                                    from: rhs_var.clone(),
+                                    to: lhs.clone(),
+                                }]))
+                            }
+                            _ => {
+                                // Regular assignment (copy)
+                                Ok(Some(vec![IrStatement::Assign {
+                                    lhs: lhs.clone(),
+                                    rhs: IrExpression::Variable(rhs_var.clone()),
+                                }]))
+                            }
                         }
-                        _ => {
-                            // Regular assignment (copy)
-                            Ok(Some(vec![IrStatement::Assign {
-                                lhs: lhs.clone(),
-                                rhs: IrExpression::Variable(rhs_var.clone()),
-                            }]))
-                        }
+                    } else {
+                        Ok(None)
                     }
-                } else {
-                    Ok(None)
                 }
-            } else {
-                Ok(None)
+                crate::parser::Expression::FunctionCall { name, args } => {
+                    // Convert function call arguments to strings
+                    let arg_names: Vec<String> = args.iter()
+                        .filter_map(|arg| {
+                            if let crate::parser::Expression::Variable(var) = arg {
+                                Some(var.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    
+                    Ok(Some(vec![IrStatement::CallExpr {
+                        func: name.clone(),
+                        args: arg_names,
+                        result: Some(lhs.clone()),
+                    }]))
+                }
+                _ => Ok(None)
             }
+        }
+        Statement::FunctionCall { name, args, .. } => {
+            // Standalone function call (no assignment)
+            let arg_names: Vec<String> = args.iter()
+                .filter_map(|arg| {
+                    if let crate::parser::Expression::Variable(var) = arg {
+                        Some(var.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            
+            Ok(Some(vec![IrStatement::CallExpr {
+                func: name.clone(),
+                args: arg_names,
+                result: None,
+            }]))
+        }
+        Statement::Return(expr) => {
+            let value = expr.as_ref().and_then(|e| {
+                if let crate::parser::Expression::Variable(var) = e {
+                    Some(var.clone())
+                } else {
+                    None
+                }
+            });
+            
+            Ok(Some(vec![IrStatement::Return { value }]))
         }
         _ => Ok(None),
     }

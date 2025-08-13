@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 pub mod ownership;
 pub mod borrows;
 pub mod lifetimes;
+pub mod lifetime_checker;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -38,15 +39,16 @@ pub fn check_borrows(program: IrProgram) -> Result<Vec<String>, String> {
 pub fn check_borrows_with_annotations(program: IrProgram, header_cache: HeaderCache) -> Result<Vec<String>, String> {
     let mut errors = Vec::new();
     
-    // If we have header annotations, use them for cross-file checking
-    if header_cache.has_signatures() {
-        // TODO: Use header annotations to validate function calls
-        // For now, just run regular borrow checking
-    }
-    
+    // Run regular borrow checking
     for function in &program.functions {
         let function_errors = check_function(function)?;
         errors.extend(function_errors);
+    }
+    
+    // If we have header annotations, also check lifetime constraints
+    if header_cache.has_signatures() {
+        let lifetime_errors = lifetime_checker::check_lifetimes_with_annotations(&program, &header_cache)?;
+        errors.extend(lifetime_errors);
     }
     
     Ok(errors)
