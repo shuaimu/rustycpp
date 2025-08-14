@@ -51,6 +51,54 @@ pub fn check_borrows_with_annotations_and_safety(
     check_borrows_with_annotations(program, header_cache)
 }
 
+pub fn check_borrows_with_safety_context(
+    program: IrProgram,
+    header_cache: HeaderCache,
+    safety_context: crate::parser::safety_annotations::SafetyContext
+) -> Result<Vec<String>, String> {
+    use crate::parser::safety_annotations::SafetyMode;
+    
+    // If the file default is unsafe and no functions are marked safe, skip checking
+    if safety_context.file_default != SafetyMode::Safe && 
+       !safety_context.function_overrides.iter().any(|(_, mode)| *mode == SafetyMode::Safe) &&
+       !has_any_safe_functions(&program, &header_cache) {
+        return Ok(Vec::new()); // No checking for unsafe code
+    }
+    
+    let mut errors = Vec::new();
+    
+    // Check each function based on its safety mode
+    for function in &program.functions {
+        // Check if this function should be checked
+        if !safety_context.should_check_function(&function.name) {
+            continue; // Skip unsafe functions
+        }
+        
+        let function_errors = check_function(function)?;
+        errors.extend(function_errors);
+    }
+    
+    // Run lifetime inference and validation for safe functions
+    for function in &program.functions {
+        if safety_context.should_check_function(&function.name) {
+            let inference_errors = lifetime_inference::infer_and_validate_lifetimes(function)?;
+            errors.extend(inference_errors);
+        }
+    }
+    
+    // If we have header annotations, also check lifetime constraints
+    if header_cache.has_signatures() {
+        let lifetime_errors = lifetime_checker::check_lifetimes_with_annotations(&program, &header_cache)?;
+        errors.extend(lifetime_errors);
+        
+        // Also run scope-based lifetime checking
+        let scope_errors = scope_lifetime::check_scoped_lifetimes(&program, &header_cache)?;
+        errors.extend(scope_errors);
+    }
+    
+    Ok(errors)
+}
+
 fn has_any_safe_functions(program: &IrProgram, header_cache: &HeaderCache) -> bool {
     use crate::parser::annotations::SafetyAnnotation;
     

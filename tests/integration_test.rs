@@ -108,7 +108,7 @@ fn test_use_after_move_with_unique_ptr() {
 
 #[test]
 fn test_multiple_mutable_borrows() {
-    let code = r#"
+    let code = r#"// @safe
     void bad_borrows() {
         int value = 42;
         int& ref1 = value;
@@ -145,7 +145,7 @@ fn test_dangling_reference_lifetime() {
 
 #[test]
 fn test_const_references_allowed() {
-    let code = r#"
+    let code = r#"// @safe
     void test_function() {
         int value = 42;
         const int& ref1 = value;
@@ -163,7 +163,7 @@ fn test_const_references_allowed() {
 
 #[test]
 fn test_mixed_const_and_mutable_refs() {
-    let code = r#"
+    let code = r#"// @safe
     void test_function() {
         int value = 42;
         const int& const_ref = value;
@@ -181,7 +181,7 @@ fn test_mixed_const_and_mutable_refs() {
 
 #[test]
 fn test_mutable_then_const_refs() {
-    let code = r#"
+    let code = r#"// @safe
     void test_function() {
         int value = 42;
         int& mut_ref = value;
@@ -262,7 +262,7 @@ fn test_simulated_move_semantics() {
 #[test] 
 fn test_reference_invalidation() {
     // Test that we detect when references become invalid
-    let code = r#"
+    let code = r#"// @safe
     void test_invalidation() {
         int x = 10;
         int& ref1 = x;
@@ -283,7 +283,7 @@ fn test_reference_invalidation() {
 #[test]
 fn test_const_after_mutable() {
     // Test Rust's rule: can't have const ref while mutable ref exists
-    let code = r#"
+    let code = r#"// @safe
     void test() {
         int value = 100;
         int& mut_ref = value;      // Mutable borrow
@@ -306,7 +306,7 @@ fn test_const_after_mutable() {
 #[test]
 fn test_complex_reference_pattern() {
     // Test a more complex borrowing pattern
-    let code = r#"
+    let code = r#"// @safe
     void complex_test() {
         int a = 1;
         int b = 2;

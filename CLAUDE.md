@@ -4,7 +4,7 @@
 
 This is a Rust-based static analyzer that applies Rust's ownership and borrowing rules to C++ code. The goal is to catch memory safety issues at compile-time without runtime overhead.
 
-## Current State (Updated: Unsafe blocks within safe functions implemented)
+## Current State (Updated: Unified @safe/@unsafe annotation rules implemented)
 
 ### What's Fully Implemented ✅
 - ✅ **Complete reference borrow checking** for C++ const and mutable references
@@ -33,12 +33,16 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
   - Variable is moved only if moved in ALL paths
   - Borrows cleared when not present in all branches
   - Handles nested conditionals
-- ✅ **Safe/unsafe annotation support for gradual adoption**
-  - C++ files are unsafe by default (no checking) for compatibility
-  - `// @safe` at file beginning enables checking for entire file
-  - `@safe` function annotation enables checking for specific functions
-  - `@unsafe` function annotation disables checking even in safe files
-  - `unsafe_begin()`/`unsafe_end()` markers for unsafe blocks within safe functions
+- ✅ **Unified safe/unsafe annotation system for gradual adoption**
+  - **Unified rule**: `@safe`/`@unsafe` annotations attach to the next code element
+  - C++ files are unsafe by default (no checking) for backward compatibility
+  - **Namespace-level**: `// @safe` before namespace applies to entire namespace/file
+  - **Function-level**: `// @safe` before function enables checking for that function
+  - **First-element rule**: `// @safe` before first code element makes entire file safe
+  - `// @unsafe` explicitly marks functions/blocks as unchecked
+  - `// @unsafe` and `// @endunsafe` markers for unsafe blocks within safe functions
+  - Line-based unsafe region detection (all code between markers is unchecked)
+  - Supports nested unsafe regions and mixed safety modes
   - Fine-grained control over which code is checked
   - Allows gradual migration of existing codebases
   - Skip checks in performance-critical sections or FFI code

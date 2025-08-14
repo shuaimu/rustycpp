@@ -1,0 +1,11 @@
+#!/bin/bash
+# Standalone wrapper for cpp-borrow-checker
+
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Set library paths
+export DYLD_LIBRARY_PATH="/opt/homebrew/Cellar/llvm/19.1.7/lib:/opt/homebrew/lib:/usr/local/lib:$DYLD_LIBRARY_PATH"
+
+# Run the actual binary
+exec "$SCRIPT_DIR/cpp-borrow-checker" "$@"

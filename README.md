@@ -42,12 +42,16 @@ git clone https://github.com/yourusername/cpp-borrow-checker
 cd cpp-borrow-checker
 
 # Build the project
-export Z3_SYS_Z3_HEADER=/opt/homebrew/opt/z3/include/z3.h
 cargo build --release
+
+# Run tests
+./run_tests.sh
 
 # Add to PATH (optional)
 export PATH="$PATH:$(pwd)/target/release"
 ```
+
+**Note**: The project includes a `.cargo/config.toml` file that automatically sets the required environment variables for Z3. If you encounter build issues, you may need to adjust the paths in this file based on your system configuration.
 
 ### Linux (Ubuntu/Debian)
 
@@ -90,6 +94,24 @@ cpp-borrow-checker -vv path/to/file.cpp
 cpp-borrow-checker --format json path/to/file.cpp
 ```
 
+### Standalone Binary (No Environment Variables Required)
+
+For release distributions, we provide a standalone binary that doesn't require setting environment variables:
+
+```bash
+# Build standalone release
+./build_release.sh
+
+# Install from distribution
+cd dist/cpp-borrow-checker-*/
+./install.sh
+
+# Or use directly
+./cpp-borrow-checker-standalone file.cpp
+```
+
+See [RELEASE.md](RELEASE.md) for details on building and distributing standalone binaries.
+
 ### Environment Setup (macOS)
 
 For convenience, add these to your shell profile:
@@ -99,6 +121,49 @@ For convenience, add these to your shell profile:
 export Z3_SYS_Z3_HEADER=/opt/homebrew/opt/z3/include/z3.h
 export DYLD_LIBRARY_PATH=/opt/homebrew/opt/llvm/lib:$DYLD_LIBRARY_PATH
 ```
+
+## 🛡️ Safety Annotations
+
+The borrow checker uses a unified annotation system for gradual adoption in existing codebases:
+
+### Unified Rule
+`@safe` and `@unsafe` annotations attach to the **next** code element (namespace, function, or first statement).
+
+```cpp
+// Example 1: Namespace-level safety
+// @safe
+namespace myapp {
+    void func() { /* checked */ }
+}
+
+// Example 2: Function-level safety
+// @safe
+void checked_function() { /* checked */ }
+
+void unchecked_function() { /* not checked - default is unsafe */ }
+
+// Example 3: First-element rule
+// @safe
+int global = 42;  // Makes entire file safe
+
+// Example 4: Unsafe blocks within safe functions
+// @safe
+void mixed_safety() {
+    int value = 42;
+    int& ref1 = value;
+    
+    // @unsafe
+    {
+        int& ref2 = value;  // Not checked in unsafe block
+    }
+    // @endunsafe
+}
+```
+
+### Default Behavior
+- Files are **unsafe by default** (no checking) for backward compatibility
+- Use `@safe` to opt into borrow checking
+- Use `@unsafe` to explicitly disable checking
 
 ## 📝 Examples
 

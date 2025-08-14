@@ -89,14 +89,14 @@ fn analyze_file(path: &PathBuf, include_paths: &[PathBuf], compile_commands: Opt
     // Parse the C++ file with include paths
     let ast = parser::parse_cpp_file_with_includes(path, &all_include_paths)?;
     
-    // Check if file has @safe annotation at the beginning
-    let file_safe = parser::check_file_safety_annotation(path)?;
+    // Parse safety annotations using the unified rule
+    let safety_context = parser::safety_annotations::parse_safety_annotations(path)?;
     
-    // Build intermediate representation
-    let ir = ir::build_ir(ast)?;
+    // Build intermediate representation with safety context
+    let ir = ir::build_ir_with_safety_context(ast, safety_context.clone())?;
     
-    // Perform borrow checking analysis with header knowledge and safety mode
-    let violations = analysis::check_borrows_with_annotations_and_safety(ir, header_cache, file_safe)?;
+    // Perform borrow checking analysis with header knowledge and safety context
+    let violations = analysis::check_borrows_with_safety_context(ir, header_cache, safety_context)?;
     
     Ok(violations)
 }

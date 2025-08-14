@@ -267,37 +267,20 @@ fn extract_compound_statement(entity: &Entity) -> Vec<Statement> {
                     }
                 }
                 
-                // Check if this is an unsafe_begin/unsafe_end marker
-                if name == "unsafe_begin" || name == "UNSAFE_BEGIN" {
-                    statements.push(Statement::EnterUnsafe);
-                } else if name == "unsafe_end" || name == "UNSAFE_END" {
-                    statements.push(Statement::ExitUnsafe);
-                } else {
-                    statements.push(Statement::FunctionCall {
-                        name,
-                        args,
-                        location: extract_location(&child),
-                    });
-                }
+                statements.push(Statement::FunctionCall {
+                    name,
+                    args,
+                    location: extract_location(&child),
+                });
             }
             EntityKind::ReturnStmt => {
                 statements.push(Statement::Return(None));
             }
             EntityKind::CompoundStmt => {
-                // Check if this block has an unsafe annotation
-                let is_unsafe_block = check_for_unsafe_annotation(&child);
-                
-                if is_unsafe_block {
-                    // Unsafe block - add unsafe markers
-                    statements.push(Statement::EnterUnsafe);
-                    statements.extend(extract_compound_statement(&child));
-                    statements.push(Statement::ExitUnsafe);
-                } else {
-                    // Regular nested block scope - add scope markers
-                    statements.push(Statement::EnterScope);
-                    statements.extend(extract_compound_statement(&child));
-                    statements.push(Statement::ExitScope);
-                }
+                // Regular nested block scope - add scope markers
+                statements.push(Statement::EnterScope);
+                statements.extend(extract_compound_statement(&child));
+                statements.push(Statement::ExitScope);
             }
             EntityKind::ForStmt | EntityKind::WhileStmt | EntityKind::DoStmt => {
                 // Loop detected - add loop markers
@@ -456,19 +439,9 @@ fn type_to_string(ty: &Type) -> String {
     ty.get_display_name()
 }
 
-fn check_for_unsafe_annotation(entity: &Entity) -> bool {
-    // For now, we'll use a macro approach: UNSAFE { ... }
-    // This is detected when the parent is an if statement with "true" condition
-    // and the macro name contains "unsafe"
-    
-    // Check parent entity to see if this is part of an UNSAFE macro
-    if let Some(parent) = entity.get_lexical_parent() {
-        if parent.get_kind() == EntityKind::IfStmt {
-            // Check if this looks like UNSAFE { ... }
-            // This is a simplified check - in practice we'd need more robust detection
-            return false; // For now, we'll implement this differently
-        }
-    }
-    
+fn check_for_unsafe_annotation(_entity: &Entity) -> bool {
+    // This function is no longer used since we handle unsafe regions
+    // differently using comment annotations that are scanned separately
+    // Always return false
     false
 }

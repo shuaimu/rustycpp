@@ -145,11 +145,36 @@ pub enum OwnershipEdge {
 }
 
 pub fn build_ir(ast: CppAst) -> Result<IrProgram, String> {
+    build_ir_with_unsafe_regions(ast, Vec::new())
+}
+
+pub fn build_ir_with_unsafe_regions(
+    ast: CppAst, 
+    unsafe_regions: Vec<crate::parser::unsafe_scanner::UnsafeRegion>
+) -> Result<IrProgram, String> {
     let mut functions = Vec::new();
     let ownership_graph = DiGraph::new();
     
     for func in ast.functions {
-        let ir_func = convert_function(&func)?;
+        let ir_func = convert_function_with_unsafe(&func, &unsafe_regions)?;
+        functions.push(ir_func);
+    }
+    
+    Ok(IrProgram {
+        functions,
+        ownership_graph,
+    })
+}
+
+pub fn build_ir_with_safety_context(
+    ast: CppAst,
+    safety_context: crate::parser::safety_annotations::SafetyContext
+) -> Result<IrProgram, String> {
+    let mut functions = Vec::new();
+    let ownership_graph = DiGraph::new();
+    
+    for func in ast.functions {
+        let ir_func = convert_function_with_safety(&func, &safety_context)?;
         functions.push(ir_func);
     }
     
@@ -160,15 +185,60 @@ pub fn build_ir(ast: CppAst) -> Result<IrProgram, String> {
 }
 
 fn convert_function(func: &crate::parser::Function) -> Result<IrFunction, String> {
+    convert_function_with_unsafe(func, &Vec::new())
+}
+
+fn convert_function_with_safety(
+    func: &crate::parser::Function,
+    safety_context: &crate::parser::safety_annotations::SafetyContext
+) -> Result<IrFunction, String> {
+    // Convert using the block regions from safety context
+    convert_function_with_unsafe(func, &safety_context.block_regions.iter()
+        .map(|r| crate::parser::unsafe_scanner::UnsafeRegion {
+            start_line: r.start_line,
+            end_line: r.end_line,
+        })
+        .collect::<Vec<_>>())
+}
+
+fn convert_function_with_unsafe(
+    func: &crate::parser::Function,
+    unsafe_regions: &[crate::parser::unsafe_scanner::UnsafeRegion]
+) -> Result<IrFunction, String> {
     let mut cfg = DiGraph::new();
     let mut variables = HashMap::new();
     
-    // Create entry block and convert statements
+    // Create entry block and convert statements with unsafe region tracking
     let mut statements = Vec::new();
+    let mut current_line = func.location.line as usize;
+    let mut in_unsafe = false;
+    
     for stmt in &func.body {
+        // Update current line from statement location if available
+        if let Some(stmt_line) = get_statement_line(stmt) {
+            current_line = stmt_line as usize;
+        }
+        
+        // Check if we're entering or leaving an unsafe region
+        let was_in_unsafe = in_unsafe;
+        in_unsafe = crate::parser::unsafe_scanner::is_line_in_unsafe_region(current_line, unsafe_regions);
+        
+        // Add unsafe markers if transitioning
+        if !was_in_unsafe && in_unsafe {
+            statements.push(IrStatement::EnterUnsafe);
+        } else if was_in_unsafe && !in_unsafe {
+            statements.push(IrStatement::ExitUnsafe);
+        }
+        
+        // Convert the statement
         if let Some(ir_stmts) = convert_statement(stmt, &mut variables)? {
             statements.extend(ir_stmts);
         }
+    }
+    
+    // Make sure to exit unsafe if we're still in it at the end
+    if in_unsafe {
+        statements.push(IrStatement::ExitUnsafe);
     }
     
     let entry_block = BasicBlock {
@@ -211,6 +281,18 @@ fn convert_function(func: &crate::parser::Function) -> Result<IrFunction, String
         cfg,
         variables,
     })
+}
+
+// Helper function to get line number from a statement
+fn get_statement_line(stmt: &crate::parser::Statement) -> Option<u32> {
+    use crate::parser::Statement;
+    match stmt {
+        Statement::Assignment { location, .. } => Some(location.line),
+        Statement::ReferenceBinding { location, .. } => Some(location.line),
+        Statement::FunctionCall { location, .. } => Some(location.line),
+        Statement::If { location, .. } => Some(location.line),
+        _ => None,
+    }
 }
 
 fn convert_statement(
