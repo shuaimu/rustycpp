@@ -110,6 +110,9 @@ pub enum IrStatement {
         then_branch: Vec<IrStatement>,
         else_branch: Option<Vec<IrStatement>>,
     },
+    // Safety markers
+    EnterUnsafe,
+    ExitUnsafe,
 }
 
 #[derive(Debug, Clone)]
@@ -412,6 +415,12 @@ fn convert_statement(
         }
         Statement::ExitLoop => {
             Ok(Some(vec![IrStatement::ExitLoop]))
+        }
+        Statement::EnterUnsafe => {
+            Ok(Some(vec![IrStatement::EnterUnsafe]))
+        }
+        Statement::ExitUnsafe => {
+            Ok(Some(vec![IrStatement::ExitUnsafe]))
         }
         Statement::If { then_branch, else_branch, .. } => {
             // Convert if statement branches to IR

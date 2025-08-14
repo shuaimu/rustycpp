@@ -4,7 +4,7 @@
 
 This is a Rust-based static analyzer that applies Rust's ownership and borrowing rules to C++ code. The goal is to catch memory safety issues at compile-time without runtime overhead.
 
-## Current State (Updated: If/else conditional analysis with path-sensitivity implemented)
+## Current State (Updated: Safe/unsafe annotation support for gradual adoption)
 
 ### What's Fully Implemented ✅
 - ✅ **Complete reference borrow checking** for C++ const and mutable references
@@ -33,6 +33,13 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
   - Variable is moved only if moved in ALL paths
   - Borrows cleared when not present in all branches
   - Handles nested conditionals
+- ✅ **Safe/unsafe annotation support for gradual adoption**
+  - C++ files are unsafe by default (no checking) for compatibility
+  - `--safe` CLI flag enables checking for entire file
+  - `@safe` function annotation enables checking for specific functions
+  - `@unsafe` function annotation disables checking even in safe files
+  - Allows gradual migration of existing codebases
+  - Skip checks in performance-critical sections
 - ✅ **Cross-file analysis with lifetime annotations**
   - Rust-like lifetime syntax in headers (`&'a`, `&'a mut`, `owned`)
   - Header parsing and caching system
@@ -52,7 +59,7 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
 - ✅ IR with CallExpr and Return statements
 - ✅ Z3 solver integration for constraints
 - ✅ Colored diagnostic output
-- ✅ **Comprehensive test suite**: 64 tests (40 unit, 24 integration including loop and conditional tests)
+- ✅ **Comprehensive test suite**: 69 tests (40 unit, 29 integration including loop, conditional, and safe/unsafe tests)
 
 ### What's Partially Implemented ⚠️
 - ⚠️ Control flow (basic blocks work, loops/conditionals limited)

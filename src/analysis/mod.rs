@@ -38,13 +38,50 @@ pub fn check_borrows(program: IrProgram) -> Result<Vec<String>, String> {
     Ok(errors)
 }
 
+pub fn check_borrows_with_annotations_and_safety(
+    program: IrProgram, 
+    header_cache: HeaderCache,
+    file_safe: bool
+) -> Result<Vec<String>, String> {
+    // If file is marked unsafe and no functions are marked safe, skip checking
+    if !file_safe && !has_any_safe_functions(&program, &header_cache) {
+        return Ok(Vec::new()); // No checking for unsafe code
+    }
+    
+    check_borrows_with_annotations(program, header_cache)
+}
+
+fn has_any_safe_functions(program: &IrProgram, header_cache: &HeaderCache) -> bool {
+    use crate::parser::annotations::SafetyAnnotation;
+    
+    for function in &program.functions {
+        if let Some(sig) = header_cache.get_signature(&function.name) {
+            if let Some(SafetyAnnotation::Safe) = sig.safety {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 pub fn check_borrows_with_annotations(program: IrProgram, header_cache: HeaderCache) -> Result<Vec<String>, String> {
+    use crate::parser::annotations::SafetyAnnotation;
     let mut errors = Vec::new();
     
-    // Run regular borrow checking
+    // Run regular borrow checking, but skip unsafe functions
     for function in &program.functions {
-        let function_errors = check_function(function)?;
-        errors.extend(function_errors);
+        // Check if this function is marked as unsafe
+        let is_unsafe = if let Some(sig) = header_cache.get_signature(&function.name) {
+            matches!(sig.safety, Some(SafetyAnnotation::Unsafe))
+        } else {
+            false
+        };
+        
+        // Skip checking if function is marked unsafe
+        if !is_unsafe {
+            let function_errors = check_function(function)?;
+            errors.extend(function_errors);
+        }
     }
     
     // Run lifetime inference and validation
@@ -199,6 +236,14 @@ fn process_statement(
 ) {
     match statement {
         crate::ir::IrStatement::Move { from, to } => {
+            // Skip checks if we're in an unsafe block
+            if ownership_tracker.is_in_unsafe_block() {
+                // Still update ownership state for consistency
+                ownership_tracker.set_ownership(from.clone(), OwnershipState::Moved);
+                ownership_tracker.set_ownership(to.clone(), OwnershipState::Owned);
+                return;
+            }
+            
             // Check if 'from' is owned and not moved
             let from_state = ownership_tracker.get_ownership(from);
             
@@ -230,6 +275,14 @@ fn process_statement(
         }
         
         crate::ir::IrStatement::Borrow { from, to, kind } => {
+            // Skip checks if we're in an unsafe block
+            if ownership_tracker.is_in_unsafe_block() {
+                // Still record the borrow for consistency
+                ownership_tracker.add_borrow(from.clone(), to.clone(), kind.clone());
+                ownership_tracker.mark_as_reference(to.clone(), *kind == BorrowKind::Mutable);
+                return;
+            }
+            
             // Check if the source is accessible
             let from_state = ownership_tracker.get_ownership(from);
             
@@ -278,6 +331,11 @@ fn process_statement(
         }
         
         crate::ir::IrStatement::Assign { lhs, rhs } => {
+            // Skip checks if we're in an unsafe block
+            if ownership_tracker.is_in_unsafe_block() {
+                return;
+            }
+            
             // Check if we're trying to modify through a const reference
             if ownership_tracker.is_reference(lhs) && !ownership_tracker.is_mutable_reference(lhs) {
                 errors.push(format!(
@@ -313,7 +371,21 @@ fn process_statement(
             // Handled at the higher level
         }
         
+        crate::ir::IrStatement::EnterUnsafe => {
+            ownership_tracker.unsafe_depth += 1;
+        }
+        
+        crate::ir::IrStatement::ExitUnsafe => {
+            if ownership_tracker.unsafe_depth > 0 {
+                ownership_tracker.unsafe_depth -= 1;
+            }
+        }
+        
         crate::ir::IrStatement::If { then_branch, else_branch } => {
+            // Skip checking if we're in an unsafe block
+            if ownership_tracker.is_in_unsafe_block() {
+                return;
+            }
             // Handle conditional execution with path-sensitive analysis
             // Save current state before branching
             let state_before_if = ownership_tracker.clone_state();
@@ -356,6 +428,8 @@ struct OwnershipTracker {
     loop_depth: usize,
     // Save state when entering a loop (for 2nd iteration checking)
     loop_entry_states: Vec<LoopEntryState>,
+    // Track if we're in an unsafe block
+    unsafe_depth: usize,
 }
 
 #[derive(Clone)]
@@ -399,10 +473,15 @@ impl OwnershipTracker {
             scope_stack: Vec::new(),
             loop_depth: 0,
             loop_entry_states: Vec::new(),
+            unsafe_depth: 0,
         };
         // Start with a root scope
         tracker.scope_stack.push(ScopeInfo::default());
         tracker
+    }
+    
+    fn is_in_unsafe_block(&self) -> bool {
+        self.unsafe_depth > 0
     }
     
     fn set_ownership(&mut self, var: String, state: OwnershipState) {

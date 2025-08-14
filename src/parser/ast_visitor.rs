@@ -70,6 +70,9 @@ pub enum Statement {
     // Loop markers
     EnterLoop,
     ExitLoop,
+    // Safety markers
+    EnterUnsafe,
+    ExitUnsafe,
     // Conditional statements
     If {
         condition: Expression,

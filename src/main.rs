@@ -41,6 +41,10 @@ struct Args {
     /// Output format (text, json)
     #[arg(long, default_value = "text")]
     format: String,
+
+    /// Enable safe mode - enforce borrow checking for the entire file
+    #[arg(long)]
+    safe: bool,
 }
 
 fn main() {
@@ -49,7 +53,7 @@ fn main() {
     println!("{}", "C++ Borrow Checker".bold().blue());
     println!("Analyzing: {}", args.input.display());
     
-    match analyze_file(&args.input, &args.include_paths, args.compile_commands.as_ref()) {
+    match analyze_file(&args.input, &args.include_paths, args.compile_commands.as_ref(), args.safe) {
         Ok(results) => {
             if results.is_empty() {
                 println!("{}", "✓ No borrow checking violations found!".green());
@@ -68,7 +72,7 @@ fn main() {
     }
 }
 
-fn analyze_file(path: &PathBuf, include_paths: &[PathBuf], compile_commands: Option<&PathBuf>) -> Result<Vec<String>, String> {
+fn analyze_file(path: &PathBuf, include_paths: &[PathBuf], compile_commands: Option<&PathBuf>, file_safe: bool) -> Result<Vec<String>, String> {
     // Start with CLI-provided include paths
     let mut all_include_paths = include_paths.to_vec();
     
@@ -92,8 +96,8 @@ fn analyze_file(path: &PathBuf, include_paths: &[PathBuf], compile_commands: Opt
     // Build intermediate representation
     let ir = ir::build_ir(ast)?;
     
-    // Perform borrow checking analysis with header knowledge
-    let violations = analysis::check_borrows_with_annotations(ir, header_cache)?;
+    // Perform borrow checking analysis with header knowledge and safety mode
+    let violations = analysis::check_borrows_with_annotations_and_safety(ir, header_cache, file_safe)?;
     
     Ok(violations)
 }

@@ -13,12 +13,19 @@ pub enum LifetimeAnnotation {
     Owned,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum SafetyAnnotation {
+    Safe,    // @safe - enforce borrow checking
+    Unsafe,  // @unsafe - skip borrow checking
+}
+
 #[derive(Debug, Clone)]
 pub struct FunctionSignature {
     pub name: String,
     pub return_lifetime: Option<LifetimeAnnotation>,
     pub param_lifetimes: Vec<Option<LifetimeAnnotation>>,
     pub lifetime_bounds: Vec<LifetimeBound>, // e.g., 'a: 'b
+    pub safety: Option<SafetyAnnotation>, // @safe or @unsafe
 }
 
 #[derive(Debug, Clone)]
@@ -44,9 +51,22 @@ pub fn extract_annotations(entity: &Entity) -> Option<FunctionSignature> {
 // @lifetime: ('a, 'b) -> &'a T where 'a: 'b
 // @lifetime: owned
 fn parse_lifetime_annotations(comment: &str, func_name: String) -> Option<FunctionSignature> {
+    // Look for @safe or @unsafe annotation first
+    let safe_re = Regex::new(r"@safe\b").ok()?;
+    let unsafe_re = Regex::new(r"@unsafe\b").ok()?;
+    
+    let safety = if safe_re.is_match(comment) {
+        Some(SafetyAnnotation::Safe)
+    } else if unsafe_re.is_match(comment) {
+        Some(SafetyAnnotation::Unsafe)
+    } else {
+        None
+    };
+    
     // Look for @lifetime annotation
     let lifetime_re = Regex::new(r"@lifetime:\s*(.+)").ok()?;
     
+    // If we have either safety or lifetime annotations, create a signature
     if let Some(captures) = lifetime_re.captures(comment) {
         let annotation_str = captures.get(1)?.as_str();
         
@@ -56,6 +76,7 @@ fn parse_lifetime_annotations(comment: &str, func_name: String) -> Option<Functi
             return_lifetime: None,
             param_lifetimes: Vec::new(),
             lifetime_bounds: Vec::new(),
+            safety,
         };
         
         // Check for where clause
@@ -88,6 +109,15 @@ fn parse_lifetime_annotations(comment: &str, func_name: String) -> Option<Functi
         }
         
         Some(signature)
+    } else if safety.is_some() {
+        // Even if no lifetime annotation, return signature if we have safety annotation
+        Some(FunctionSignature {
+            name: func_name,
+            return_lifetime: None,
+            param_lifetimes: Vec::new(),
+            lifetime_bounds: Vec::new(),
+            safety,
+        })
     } else {
         None
     }
