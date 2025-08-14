@@ -49,13 +49,83 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
 - ⚠️ Method calls (basic support, no virtual functions)
 
 ### What's Not Implemented Yet ❌
-- ❌ **Smart pointers** (std::unique_ptr, std::shared_ptr)
-- ❌ **Templates** (no parsing or instantiation tracking)
-- ❌ **Advanced control flow** (loops, switch, exceptions)
-- ❌ **Constructors/Destructors** (no RAII tracking)
+
+#### Critical for Modern C++
+- ❌ **Smart pointers** (std::unique_ptr, std::shared_ptr, std::weak_ptr)
+  - No ownership transfer tracking for unique_ptr
+  - No reference counting for shared_ptr
+  - Would require parsing member function calls (reset, release, etc.)
+  
+- ❌ **Templates** 
+  - Template declarations ignored
+  - No instantiation tracking
+  - Generic code goes unchecked
+
+#### Important for Correctness
+- ❌ **Loop iteration analysis**
+  - Loops treated as single execution
+  - Can't detect use-after-move in second iteration
+  - Missing back-edge analysis in CFG
+  - Need fixed-point iteration like Rust's approach
+  
+- ❌ **Path-sensitive analysis**
+  - No "maybe moved" state tracking
+  - Can't handle mutually exclusive conditions
+  - All paths assumed to execute
+  
+- ❌ **Constructor/Destructor (RAII)**
+  - Object lifetime not tracked
+  - Destructor calls not analyzed
+  - RAII patterns not understood
+
+#### Nice to Have
+- ❌ **Reassignment after move**
+  - Can't track when moved variable becomes valid again
+  - `x = std::move(y); x = 42;` - x valid again but not tracked
+  
+- ❌ **Method calls**
+  - Only free functions work
+  - No `this` pointer tracking
+  - Virtual functions not supported
+  
+- ❌ **Exception handling**
+  - Try/catch blocks ignored
+  - Stack unwinding not modeled
+  
 - ❌ **Lambdas and closures**
-- ❌ **IDE integration** (no LSP server)
-- ❌ **Fix suggestions** in error messages
+  - Capture semantics not analyzed
+  - Closure lifetime not tracked
+  
+- ❌ **Better diagnostics**
+  - No code snippets in errors
+  - No fix suggestions
+  - No explanation of borrowing rules
+  
+- ❌ **IDE integration**
+  - No Language Server Protocol (LSP)
+  - CLI only
+
+## How Rust's Borrow Checker Handles Loops
+
+Rust uses a sophisticated approach to detect use-after-move in loops:
+
+1. **Control Flow Graph with Back Edges**: Loops have edges from end back to beginning
+2. **Fixed-Point Iteration**: Analysis runs until no more state changes
+3. **Three-State Tracking**: Variables are "definitely initialized", "definitely uninitialized", or "maybe initialized"
+4. **Conservative Analysis**: "Maybe initialized" treated as error for moves
+
+Example of what Rust catches:
+```rust
+for i in 0..2 {
+    let y = x;  // ERROR: value moved here, in previous iteration of loop
+}
+```
+
+To implement similar analysis in our checker:
+- Detect loop back edges in CFG
+- Analyze loop body twice (simulating two iterations)
+- Track "maybe moved" state for variables
+- Error if "maybe moved" variable is used
 
 ## Key Technical Decisions
 
@@ -249,6 +319,26 @@ This project has successfully implemented:
 6. ✅ Automatic lifetime inference
 7. ✅ Enhanced IR with function calls and returns
 8. ✅ 56 comprehensive tests
+
+## Implementation Priority
+
+Based on impact and complexity, recommended order:
+
+### High Priority (Most Impact)
+1. **std::unique_ptr support** - Ubiquitous in modern C++
+2. **Loop iteration analysis** - Catches real bugs
+3. **Basic templates** - Required for real codebases
+
+### Medium Priority
+4. **Path-sensitive analysis** - Reduces false positives
+5. **Constructor/Destructor** - RAII understanding
+6. **Method calls** - Object-oriented code
+
+### Low Priority
+7. **Reassignment tracking** - Edge cases
+8. **Exception handling** - Complex
+9. **Better diagnostics** - Current ones work
+10. **IDE integration** - CLI is functional
 
 ## Contact with Original Requirements
 
