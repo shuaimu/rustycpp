@@ -4,7 +4,7 @@
 
 This is a Rust-based static analyzer that applies Rust's ownership and borrowing rules to C++ code. The goal is to catch memory safety issues at compile-time without runtime overhead.
 
-## Current State (Updated: Loop analysis with 2-iteration assumption implemented)
+## Current State (Updated: If/else conditional analysis with path-sensitivity implemented)
 
 ### What's Fully Implemented ✅
 - ✅ **Complete reference borrow checking** for C++ const and mutable references
@@ -27,6 +27,12 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
   - Simulates 2 iterations to catch errors on second pass
   - Properly clears loop-local borrows between iterations
   - Tracks moved state across loop iterations
+- ✅ **If/else conditional analysis with path-sensitivity**
+  - Parses if/else statements and conditions
+  - Conservative path-sensitive analysis
+  - Variable is moved only if moved in ALL paths
+  - Borrows cleared when not present in all branches
+  - Handles nested conditionals
 - ✅ **Cross-file analysis with lifetime annotations**
   - Rust-like lifetime syntax in headers (`&'a`, `&'a mut`, `owned`)
   - Header parsing and caching system
@@ -46,7 +52,7 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
 - ✅ IR with CallExpr and Return statements
 - ✅ Z3 solver integration for constraints
 - ✅ Colored diagnostic output
-- ✅ **Comprehensive test suite**: 59 tests (40 unit, 19 integration including loop tests)
+- ✅ **Comprehensive test suite**: 64 tests (40 unit, 24 integration including loop and conditional tests)
 
 ### What's Partially Implemented ⚠️
 - ⚠️ Control flow (basic blocks work, loops/conditionals limited)
@@ -67,11 +73,6 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
   - Generic code goes unchecked
 
 #### Important for Correctness
-  
-- ❌ **Path-sensitive analysis**
-  - No "maybe moved" state tracking
-  - Can't handle mutually exclusive conditions
-  - All paths assumed to execute
   
 - ❌ **Constructor/Destructor (RAII)**
   - Object lifetime not tracked

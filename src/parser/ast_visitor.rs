@@ -70,6 +70,13 @@ pub enum Statement {
     // Loop markers
     EnterLoop,
     ExitLoop,
+    // Conditional statements
+    If {
+        condition: Expression,
+        then_branch: Vec<Statement>,
+        else_branch: Option<Vec<Statement>>,
+        location: SourceLocation,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +91,11 @@ pub enum Expression {
         args: Vec<Expression>,
     },
     Literal(String),
+    BinaryOp {
+        left: Box<Expression>,
+        op: String,
+        right: Box<Expression>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -278,6 +290,41 @@ fn extract_compound_statement(entity: &Entity) -> Vec<Statement> {
                 }
                 statements.push(Statement::ExitLoop);
             }
+            EntityKind::IfStmt => {
+                // Extract if statement
+                let children: Vec<Entity> = child.get_children().into_iter().collect();
+                let mut condition = Expression::Literal("true".to_string());
+                let mut then_branch = Vec::new();
+                let mut else_branch = None;
+                
+                // Parse the if statement structure
+                let mut i = 0;
+                while i < children.len() {
+                    let child_kind = children[i].get_kind();
+                    
+                    if child_kind == EntityKind::UnexposedExpr || child_kind == EntityKind::BinaryOperator {
+                        // This is likely the condition
+                        if let Some(expr) = extract_expression(&children[i]) {
+                            condition = expr;
+                        }
+                    } else if child_kind == EntityKind::CompoundStmt {
+                        // This is a branch
+                        if then_branch.is_empty() {
+                            then_branch = extract_compound_statement(&children[i]);
+                        } else {
+                            else_branch = Some(extract_compound_statement(&children[i]));
+                        }
+                    }
+                    i += 1;
+                }
+                
+                statements.push(Statement::If {
+                    condition,
+                    then_branch,
+                    else_branch,
+                    location: extract_location(&child),
+                });
+            }
             _ => {}
         }
     }
@@ -335,6 +382,26 @@ fn extract_expression(entity: &Entity) -> Option<Expression> {
                 }
             }
             None
+        }
+        EntityKind::BinaryOperator => {
+            // Extract binary operation (e.g., i < 2, x == 0)
+            let children: Vec<Entity> = entity.get_children().into_iter().collect();
+            if children.len() == 2 {
+                if let (Some(left), Some(right)) = 
+                    (extract_expression(&children[0]), extract_expression(&children[1])) {
+                    // Try to get the operator from the entity's spelling
+                    let op = entity.get_name().unwrap_or_else(|| "==".to_string());
+                    return Some(Expression::BinaryOp {
+                        left: Box::new(left),
+                        op,
+                        right: Box::new(right),
+                    });
+                }
+            }
+            None
+        }
+        EntityKind::IntegerLiteral => {
+            entity.get_name().map(Expression::Literal)
         }
         EntityKind::UnaryOperator => {
             // Check if it's address-of (&) or dereference (*)

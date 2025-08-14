@@ -313,6 +313,35 @@ fn process_statement(
             // Handled at the higher level
         }
         
+        crate::ir::IrStatement::If { then_branch, else_branch } => {
+            // Handle conditional execution with path-sensitive analysis
+            // Save current state before branching
+            let state_before_if = ownership_tracker.clone_state();
+            
+            // Process then branch
+            for stmt in then_branch {
+                process_statement(stmt, ownership_tracker, errors);
+            }
+            let state_after_then = ownership_tracker.clone_state();
+            
+            // Restore state and process else branch if it exists
+            ownership_tracker.restore_state(&state_before_if);
+            
+            if let Some(else_stmts) = else_branch {
+                for stmt in else_stmts {
+                    process_statement(stmt, ownership_tracker, errors);
+                }
+                let state_after_else = ownership_tracker.clone_state();
+                
+                // Merge states: a variable is moved only if moved in BOTH branches
+                ownership_tracker.merge_states(&state_after_then, &state_after_else);
+            } else {
+                // No else branch: merge with original state
+                // Variable is moved only if moved in then branch AND was moved before
+                ownership_tracker.merge_states(&state_after_then, &state_before_if);
+            }
+        }
+        
         _ => {}
     }
 }
@@ -327,6 +356,13 @@ struct OwnershipTracker {
     loop_depth: usize,
     // Save state when entering a loop (for 2nd iteration checking)
     loop_entry_states: Vec<LoopEntryState>,
+}
+
+#[derive(Clone)]
+struct TrackerState {
+    ownership: HashMap<String, OwnershipState>,
+    borrows: HashMap<String, BorrowInfo>,
+    reference_info: HashMap<String, ReferenceInfo>,
 }
 
 #[derive(Clone)]
@@ -481,6 +517,69 @@ impl OwnershipTracker {
                 }
             }
         }
+    }
+    
+    fn clone_state(&self) -> TrackerState {
+        TrackerState {
+            ownership: self.ownership.clone(),
+            borrows: self.borrows.clone(),
+            reference_info: self.reference_info.clone(),
+        }
+    }
+    
+    fn restore_state(&mut self, state: &TrackerState) {
+        self.ownership = state.ownership.clone();
+        self.borrows = state.borrows.clone();
+        self.reference_info = state.reference_info.clone();
+    }
+    
+    fn merge_states(&mut self, then_state: &TrackerState, else_state: &TrackerState) {
+        // Merge ownership states conservatively
+        // A variable is considered moved only if moved in BOTH branches
+        for (var, then_ownership) in &then_state.ownership {
+            if let Some(else_ownership) = else_state.ownership.get(var) {
+                if *then_ownership == OwnershipState::Moved && *else_ownership == OwnershipState::Moved {
+                    // Moved in both branches - stays moved
+                    self.ownership.insert(var.clone(), OwnershipState::Moved);
+                } else if *then_ownership == OwnershipState::Moved || *else_ownership == OwnershipState::Moved {
+                    // Moved in only one branch - mark as "maybe moved" (for now, treat as owned)
+                    // In a more sophisticated analysis, we'd track MaybeMoved state
+                    self.ownership.insert(var.clone(), OwnershipState::Owned);
+                } else {
+                    // Not moved in either branch - use the common state
+                    self.ownership.insert(var.clone(), then_ownership.clone());
+                }
+            }
+        }
+        
+        // Merge borrows - a borrow exists only if it exists in BOTH branches
+        // This is conservative: if a borrow doesn't exist in one branch, it's not guaranteed after the if
+        self.borrows.clear();
+        for (var, then_borrow) in &then_state.borrows {
+            if let Some(else_borrow) = else_state.borrows.get(var) {
+                // Borrow exists in both branches - keep it
+                let mut merged_borrow = then_borrow.clone();
+                // Keep only common borrowers
+                merged_borrow.borrowers.retain(|b| else_borrow.borrowers.contains(b));
+                // Use minimum counts (conservative)
+                merged_borrow.immutable_count = merged_borrow.immutable_count.min(else_borrow.immutable_count);
+                merged_borrow.has_mutable = merged_borrow.has_mutable && else_borrow.has_mutable;
+                
+                if !merged_borrow.borrowers.is_empty() {
+                    self.borrows.insert(var.clone(), merged_borrow);
+                }
+            }
+            // If borrow doesn't exist in else branch, don't include it
+        }
+        
+        // Also clear reference info for references that don't exist in both branches
+        let mut refs_to_keep = HashSet::new();
+        for (var, _) in &then_state.reference_info {
+            if else_state.reference_info.contains_key(var) {
+                refs_to_keep.insert(var.clone());
+            }
+        }
+        self.reference_info.retain(|var, _| refs_to_keep.contains(var));
     }
     
     fn clear_loop_locals(&mut self, loop_locals: &HashSet<String>) {

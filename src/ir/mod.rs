@@ -105,6 +105,11 @@ pub enum IrStatement {
     // Loop markers for tracking loop iterations
     EnterLoop,
     ExitLoop,
+    // Conditional execution markers
+    If {
+        then_branch: Vec<IrStatement>,
+        else_branch: Option<Vec<IrStatement>>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -407,6 +412,32 @@ fn convert_statement(
         }
         Statement::ExitLoop => {
             Ok(Some(vec![IrStatement::ExitLoop]))
+        }
+        Statement::If { then_branch, else_branch, .. } => {
+            // Convert if statement branches to IR
+            let mut then_ir = Vec::new();
+            for stmt in then_branch {
+                if let Some(ir_stmts) = convert_statement(stmt, variables)? {
+                    then_ir.extend(ir_stmts);
+                }
+            }
+            
+            let else_ir = if let Some(else_stmts) = else_branch {
+                let mut else_ir = Vec::new();
+                for stmt in else_stmts {
+                    if let Some(ir_stmts) = convert_statement(stmt, variables)? {
+                        else_ir.extend(ir_stmts);
+                    }
+                }
+                Some(else_ir)
+            } else {
+                None
+            };
+            
+            Ok(Some(vec![IrStatement::If {
+                then_branch: then_ir,
+                else_branch: else_ir,
+            }]))
         }
         _ => Ok(None),
     }
