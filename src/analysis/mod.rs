@@ -902,3 +902,198 @@ mod tests {
         assert!(errors[0].contains("already mutably borrowed"));
     }
 }
+#[cfg(test)]
+mod scope_tests {
+    use super::*;
+    use crate::ir::{BasicBlock, IrFunction, IrProgram, IrStatement, BorrowKind};
+    use petgraph::graph::Graph;
+    use std::collections::HashMap;
+
+    fn create_test_function_with_statements(statements: Vec<IrStatement>) -> IrFunction {
+        let mut cfg = Graph::new();
+        let block = BasicBlock {
+            id: 0,
+            statements,
+            terminator: None,
+        };
+        cfg.add_node(block);
+        
+        IrFunction {
+            name: "test".to_string(),
+            cfg,
+            variables: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn test_scope_cleanup_simple() {
+        let statements = vec![
+            IrStatement::EnterScope,
+            IrStatement::Borrow {
+                from: "value".to_string(),
+                to: "ref1".to_string(),
+                kind: BorrowKind::Mutable,
+            },
+            IrStatement::ExitScope,
+            // After scope exit, should be able to borrow again
+            IrStatement::Borrow {
+                from: "value".to_string(),
+                to: "ref2".to_string(),
+                kind: BorrowKind::Mutable,
+            },
+        ];
+        
+        let func = create_test_function_with_statements(statements);
+        let mut program = IrProgram {
+            functions: vec![func],
+            ownership_graph: petgraph::graph::DiGraph::new(),
+        };
+        
+        let result = check_borrows(program);
+        assert!(result.is_ok());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 0, "Should not report errors for borrows in different scopes");
+    }
+
+    #[test]
+    fn test_nested_scopes() {
+        let statements = vec![
+            IrStatement::EnterScope,
+            IrStatement::Borrow {
+                from: "value".to_string(),
+                to: "ref1".to_string(),
+                kind: BorrowKind::Immutable,
+            },
+            IrStatement::EnterScope,
+            // Nested scope - should be able to have another immutable borrow
+            IrStatement::Borrow {
+                from: "value".to_string(),
+                to: "ref2".to_string(),
+                kind: BorrowKind::Immutable,
+            },
+            IrStatement::ExitScope,
+            // ref2 is gone, but ref1 still exists
+            IrStatement::ExitScope,
+            // Now both are gone
+            IrStatement::Borrow {
+                from: "value".to_string(),
+                to: "ref3".to_string(),
+                kind: BorrowKind::Mutable,
+            },
+        ];
+        
+        let func = create_test_function_with_statements(statements);
+        let mut program = IrProgram {
+            functions: vec![func],
+            ownership_graph: petgraph::graph::DiGraph::new(),
+        };
+        
+        let result = check_borrows(program);
+        assert!(result.is_ok());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 0, "Nested scopes should work correctly");
+    }
+
+    #[test]
+    fn test_scope_doesnt_affect_moves() {
+        let statements = vec![
+            IrStatement::EnterScope,
+            IrStatement::Move {
+                from: "x".to_string(),
+                to: "y".to_string(),
+            },
+            IrStatement::ExitScope,
+            // x is still moved even after scope exit
+            IrStatement::Move {
+                from: "x".to_string(),
+                to: "z".to_string(),
+            },
+        ];
+        
+        let func = create_test_function_with_statements(statements);
+        let mut program = IrProgram {
+            functions: vec![func],
+            ownership_graph: petgraph::graph::DiGraph::new(),
+        };
+        
+        let result = check_borrows(program);
+        assert!(result.is_ok());
+        let errors = result.unwrap();
+        assert!(errors.len() > 0, "Should still detect use-after-move across scopes");
+        assert!(errors[0].contains("already been moved") || errors[0].contains("Use after move"));
+    }
+
+    #[test]
+    fn test_multiple_sequential_scopes() {
+        let statements = vec![
+            // First scope
+            IrStatement::EnterScope,
+            IrStatement::Borrow {
+                from: "value".to_string(),
+                to: "ref1".to_string(),
+                kind: BorrowKind::Mutable,
+            },
+            IrStatement::ExitScope,
+            
+            // Second scope
+            IrStatement::EnterScope,
+            IrStatement::Borrow {
+                from: "value".to_string(),
+                to: "ref2".to_string(),
+                kind: BorrowKind::Mutable,
+            },
+            IrStatement::ExitScope,
+            
+            // Third scope
+            IrStatement::EnterScope,
+            IrStatement::Borrow {
+                from: "value".to_string(),
+                to: "ref3".to_string(),
+                kind: BorrowKind::Mutable,
+            },
+            IrStatement::ExitScope,
+        ];
+        
+        let func = create_test_function_with_statements(statements);
+        let mut program = IrProgram {
+            functions: vec![func],
+            ownership_graph: petgraph::graph::DiGraph::new(),
+        };
+        
+        let result = check_borrows(program);
+        assert!(result.is_ok());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 0, "Sequential scopes should not conflict");
+    }
+
+    #[test]
+    fn test_error_still_caught_in_same_scope() {
+        let statements = vec![
+            IrStatement::EnterScope,
+            IrStatement::Borrow {
+                from: "value".to_string(),
+                to: "ref1".to_string(),
+                kind: BorrowKind::Mutable,
+            },
+            // This should error - same scope
+            IrStatement::Borrow {
+                from: "value".to_string(),
+                to: "ref2".to_string(),
+                kind: BorrowKind::Mutable,
+            },
+            IrStatement::ExitScope,
+        ];
+        
+        let func = create_test_function_with_statements(statements);
+        let mut program = IrProgram {
+            functions: vec![func],
+            ownership_graph: petgraph::graph::DiGraph::new(),
+        };
+        
+        let result = check_borrows(program);
+        assert!(result.is_ok());
+        let errors = result.unwrap();
+        assert!(errors.len() > 0, "Should still catch errors within the same scope");
+        assert!(errors[0].contains("already mutably borrowed"));
+    }
+}
