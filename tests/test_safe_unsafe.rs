@@ -33,9 +33,9 @@ void test() {
 }
 
 #[test]
-fn test_safe_file_flag() {
-    // With --safe flag, entire file is checked
-    let test_code = r#"
+fn test_safe_file_annotation() {
+    // With @safe annotation at beginning, entire file is checked
+    let test_code = r#"// @safe
 class UniquePtr {
 public:
     UniquePtr(int* p) : ptr(p) {}
@@ -57,7 +57,7 @@ void test() {
     fs::write("test_safe_file.cpp", test_code).unwrap();
     
     let output = Command::new("cargo")
-        .args(&["run", "--", "--safe", "test_safe_file.cpp"])
+        .args(&["run", "--", "test_safe_file.cpp"])
         .env("Z3_SYS_Z3_HEADER", "/opt/homebrew/include/z3.h")
         .env("DYLD_LIBRARY_PATH", "/opt/homebrew/Cellar/llvm/19.1.7/lib")
         .output()
@@ -65,9 +65,9 @@ void test() {
     
     let stdout = String::from_utf8_lossy(&output.stdout);
     
-    // Should detect use-after-move with --safe flag
+    // Should detect use-after-move with @safe annotation
     assert!(stdout.contains("moved") || stdout.contains("violation"),
-            "Should detect errors with --safe flag. Output: {}", stdout);
+            "Should detect errors with @safe file annotation. Output: {}", stdout);
     
     // Clean up
     let _ = fs::remove_file("test_safe_file.cpp");
@@ -126,7 +126,7 @@ void safe_func() {
 #[test]
 fn test_unsafe_function_annotation() {
     // Function explicitly marked as @unsafe in a safe file
-    let test_code = r#"
+    let test_code = r#"// @safe
 class UniquePtr {
 public:
     UniquePtr(int* p) : ptr(p) {}
@@ -157,7 +157,7 @@ void safe_func() {
     fs::write("test_unsafe_func.cpp", test_code).unwrap();
     
     let output = Command::new("cargo")
-        .args(&["run", "--", "--safe", "test_unsafe_func.cpp"])
+        .args(&["run", "--", "test_unsafe_func.cpp"])
         .env("Z3_SYS_Z3_HEADER", "/opt/homebrew/include/z3.h")
         .env("DYLD_LIBRARY_PATH", "/opt/homebrew/Cellar/llvm/19.1.7/lib")
         .output()

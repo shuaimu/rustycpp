@@ -1,5 +1,6 @@
 // Example demonstrating safe/unsafe annotations
 // By default, C++ code is unsafe (no checking)
+// To make entire file safe, add: // @safe
 
 // Legacy function - not checked by default
 void legacy_code() {

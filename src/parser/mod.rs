@@ -10,6 +10,9 @@ pub use header_cache::HeaderCache;
 #[allow(unused_imports)]
 pub use ast_visitor::{Variable, SourceLocation};
 
+use std::fs;
+use std::io::{BufRead, BufReader};
+
 pub fn parse_cpp_file(path: &Path) -> Result<CppAst, String> {
     parse_cpp_file_with_includes(path, &[])
 }
@@ -71,6 +74,48 @@ fn visit_entity(entity: &Entity, ast: &mut CppAst) {
     for child in entity.get_children() {
         visit_entity(&child, ast);
     }
+}
+
+/// Check if the file has @safe annotation at the beginning
+pub fn check_file_safety_annotation(path: &Path) -> Result<bool, String> {
+    let file = fs::File::open(path)
+        .map_err(|e| format!("Failed to open file for safety check: {}", e))?;
+    
+    let reader = BufReader::new(file);
+    
+    // Check first 20 lines for @safe annotation (before any code)
+    let mut found_code = false;
+    for (line_num, line_result) in reader.lines().enumerate() {
+        if line_num > 20 {
+            break; // Don't look too far
+        }
+        
+        let line = line_result.map_err(|e| format!("Failed to read line: {}", e))?;
+        let trimmed = line.trim();
+        
+        // Skip empty lines
+        if trimmed.is_empty() {
+            continue;
+        }
+        
+        // Check for @safe annotation in comments
+        if trimmed.starts_with("//") {
+            if trimmed.contains("@safe") {
+                return Ok(true);
+            }
+        } else if trimmed.starts_with("/*") {
+            // Check multi-line comment for @safe
+            if line.contains("@safe") {
+                return Ok(true);
+            }
+        } else if !trimmed.starts_with("#") {
+            // Found actual code (not preprocessor), stop looking
+            found_code = true;
+            break;
+        }
+    }
+    
+    Ok(false) // No @safe annotation found
 }
 
 #[cfg(test)]

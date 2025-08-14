@@ -41,10 +41,6 @@ struct Args {
     /// Output format (text, json)
     #[arg(long, default_value = "text")]
     format: String,
-
-    /// Enable safe mode - enforce borrow checking for the entire file
-    #[arg(long)]
-    safe: bool,
 }
 
 fn main() {
@@ -53,7 +49,7 @@ fn main() {
     println!("{}", "C++ Borrow Checker".bold().blue());
     println!("Analyzing: {}", args.input.display());
     
-    match analyze_file(&args.input, &args.include_paths, args.compile_commands.as_ref(), args.safe) {
+    match analyze_file(&args.input, &args.include_paths, args.compile_commands.as_ref()) {
         Ok(results) => {
             if results.is_empty() {
                 println!("{}", "✓ No borrow checking violations found!".green());
@@ -72,7 +68,7 @@ fn main() {
     }
 }
 
-fn analyze_file(path: &PathBuf, include_paths: &[PathBuf], compile_commands: Option<&PathBuf>, file_safe: bool) -> Result<Vec<String>, String> {
+fn analyze_file(path: &PathBuf, include_paths: &[PathBuf], compile_commands: Option<&PathBuf>) -> Result<Vec<String>, String> {
     // Start with CLI-provided include paths
     let mut all_include_paths = include_paths.to_vec();
     
@@ -92,6 +88,9 @@ fn analyze_file(path: &PathBuf, include_paths: &[PathBuf], compile_commands: Opt
     
     // Parse the C++ file with include paths
     let ast = parser::parse_cpp_file_with_includes(path, &all_include_paths)?;
+    
+    // Check if file has @safe annotation at the beginning
+    let file_safe = parser::check_file_safety_annotation(path)?;
     
     // Build intermediate representation
     let ir = ir::build_ir(ast)?;

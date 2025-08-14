@@ -35,7 +35,7 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
   - Handles nested conditionals
 - ✅ **Safe/unsafe annotation support for gradual adoption**
   - C++ files are unsafe by default (no checking) for compatibility
-  - `--safe` CLI flag enables checking for entire file
+  - `// @safe` at file beginning enables checking for entire file
   - `@safe` function annotation enables checking for specific functions
   - `@unsafe` function annotation disables checking even in safe files
   - Allows gradual migration of existing codebases
