@@ -99,6 +99,9 @@ pub enum IrStatement {
         value: Option<String>,
     },
     Drop(String),
+    // Scope markers for tracking when blocks begin/end
+    EnterScope,
+    ExitScope,
 }
 
 #[derive(Debug, Clone)]
@@ -389,6 +392,12 @@ fn convert_statement(
             });
             
             Ok(Some(vec![IrStatement::Return { value }]))
+        }
+        Statement::EnterScope => {
+            Ok(Some(vec![IrStatement::EnterScope]))
+        }
+        Statement::ExitScope => {
+            Ok(Some(vec![IrStatement::ExitScope]))
         }
         _ => Ok(None),
     }

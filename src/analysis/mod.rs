@@ -191,6 +191,14 @@ fn check_function(function: &IrFunction) -> Result<Vec<String>, String> {
                     }
                 }
                 
+                crate::ir::IrStatement::EnterScope => {
+                    ownership_tracker.enter_scope();
+                }
+                
+                crate::ir::IrStatement::ExitScope => {
+                    ownership_tracker.exit_scope();
+                }
+                
                 _ => {}
             }
         }
@@ -203,6 +211,14 @@ struct OwnershipTracker {
     ownership: HashMap<String, OwnershipState>,
     borrows: HashMap<String, BorrowInfo>,
     reference_info: HashMap<String, ReferenceInfo>,
+    // Stack of scopes, each scope tracks borrows created in it
+    scope_stack: Vec<ScopeInfo>,
+}
+
+#[derive(Default, Clone)]
+struct ScopeInfo {
+    // Borrows created in this scope (to be cleaned up on exit)
+    local_borrows: HashSet<String>,
 }
 
 #[derive(Default, Clone)]
@@ -220,11 +236,15 @@ struct ReferenceInfo {
 
 impl OwnershipTracker {
     fn new() -> Self {
-        Self {
+        let mut tracker = Self {
             ownership: HashMap::new(),
             borrows: HashMap::new(),
             reference_info: HashMap::new(),
-        }
+            scope_stack: Vec::new(),
+        };
+        // Start with a root scope
+        tracker.scope_stack.push(ScopeInfo::default());
+        tracker
     }
     
     fn set_ownership(&mut self, var: String, state: OwnershipState) {
@@ -241,11 +261,40 @@ impl OwnershipTracker {
     
     fn add_borrow(&mut self, from: String, to: String, kind: BorrowKind) {
         let borrow_info = self.borrows.entry(from).or_default();
-        borrow_info.borrowers.insert(to);
+        borrow_info.borrowers.insert(to.clone());
+        
+        // Track this borrow in the current scope
+        if let Some(current_scope) = self.scope_stack.last_mut() {
+            current_scope.local_borrows.insert(to);
+        }
         
         match kind {
             BorrowKind::Immutable => borrow_info.immutable_count += 1,
             BorrowKind::Mutable => borrow_info.has_mutable = true,
+        }
+    }
+    
+    fn enter_scope(&mut self) {
+        self.scope_stack.push(ScopeInfo::default());
+    }
+    
+    fn exit_scope(&mut self) {
+        if let Some(scope) = self.scope_stack.pop() {
+            // Clean up all borrows created in this scope
+            for borrow_name in scope.local_borrows {
+                // Remove from reference info
+                self.reference_info.remove(&borrow_name);
+                
+                // Remove from all borrow tracking
+                for borrow_info in self.borrows.values_mut() {
+                    borrow_info.borrowers.remove(&borrow_name);
+                    // Note: In a more complete implementation, we'd also
+                    // decrement counts based on the borrow kind
+                }
+            }
+            
+            // Clean up empty borrow entries
+            self.borrows.retain(|_, info| !info.borrowers.is_empty());
         }
     }
     

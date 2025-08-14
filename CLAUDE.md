@@ -4,7 +4,7 @@
 
 This is a Rust-based static analyzer that applies Rust's ownership and borrowing rules to C++ code. The goal is to catch memory safety issues at compile-time without runtime overhead.
 
-## Current State (Updated: std::move detection implemented)
+## Current State (Updated: Scope tracking implemented)
 
 ### What's Fully Implemented ✅
 - ✅ **Complete reference borrow checking** for C++ const and mutable references
@@ -17,6 +17,11 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
   - Tracks moved-from state of variables
   - Reports use-after-move errors
   - Handles both direct moves and moves in function calls
+- ✅ **Scope tracking for accurate borrow checking**
+  - Tracks when `{}` blocks begin and end
+  - Automatically cleans up borrows when they go out of scope
+  - Eliminates false positives from sequential scopes
+  - Properly handles nested scopes
 - ✅ **Cross-file analysis with lifetime annotations**
   - Rust-like lifetime syntax in headers (`&'a`, `&'a mut`, `owned`)
   - Header parsing and caching system

@@ -64,6 +64,9 @@ pub enum Statement {
         location: SourceLocation,
     },
     Block(Vec<Statement>),
+    // Scope markers
+    EnterScope,
+    ExitScope,
 }
 
 #[derive(Debug, Clone)]
@@ -254,6 +257,12 @@ fn extract_compound_statement(entity: &Entity) -> Vec<Statement> {
             }
             EntityKind::ReturnStmt => {
                 statements.push(Statement::Return(None));
+            }
+            EntityKind::CompoundStmt => {
+                // Nested block scope - add scope markers
+                statements.push(Statement::EnterScope);
+                statements.extend(extract_compound_statement(&child));
+                statements.push(Statement::ExitScope);
             }
             _ => {}
         }
