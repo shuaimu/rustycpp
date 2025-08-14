@@ -67,6 +67,9 @@ pub enum Statement {
     // Scope markers
     EnterScope,
     ExitScope,
+    // Loop markers
+    EnterLoop,
+    ExitLoop,
 }
 
 #[derive(Debug, Clone)]
@@ -263,6 +266,17 @@ fn extract_compound_statement(entity: &Entity) -> Vec<Statement> {
                 statements.push(Statement::EnterScope);
                 statements.extend(extract_compound_statement(&child));
                 statements.push(Statement::ExitScope);
+            }
+            EntityKind::ForStmt | EntityKind::WhileStmt | EntityKind::DoStmt => {
+                // Loop detected - add loop markers
+                statements.push(Statement::EnterLoop);
+                // Extract loop body (usually a compound statement)
+                for loop_child in child.get_children() {
+                    if loop_child.get_kind() == EntityKind::CompoundStmt {
+                        statements.extend(extract_compound_statement(&loop_child));
+                    }
+                }
+                statements.push(Statement::ExitLoop);
             }
             _ => {}
         }

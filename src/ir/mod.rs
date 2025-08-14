@@ -102,6 +102,9 @@ pub enum IrStatement {
     // Scope markers for tracking when blocks begin/end
     EnterScope,
     ExitScope,
+    // Loop markers for tracking loop iterations
+    EnterLoop,
+    ExitLoop,
 }
 
 #[derive(Debug, Clone)]
@@ -398,6 +401,12 @@ fn convert_statement(
         }
         Statement::ExitScope => {
             Ok(Some(vec![IrStatement::ExitScope]))
+        }
+        Statement::EnterLoop => {
+            Ok(Some(vec![IrStatement::EnterLoop]))
+        }
+        Statement::ExitLoop => {
+            Ok(Some(vec![IrStatement::ExitLoop]))
         }
         _ => Ok(None),
     }

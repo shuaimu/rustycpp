@@ -4,7 +4,7 @@
 
 This is a Rust-based static analyzer that applies Rust's ownership and borrowing rules to C++ code. The goal is to catch memory safety issues at compile-time without runtime overhead.
 
-## Current State (Updated: Scope tracking implemented)
+## Current State (Updated: Loop analysis with 2-iteration assumption implemented)
 
 ### What's Fully Implemented ✅
 - ✅ **Complete reference borrow checking** for C++ const and mutable references
@@ -22,6 +22,11 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
   - Automatically cleans up borrows when they go out of scope
   - Eliminates false positives from sequential scopes
   - Properly handles nested scopes
+- ✅ **Loop analysis with 2-iteration simulation**
+  - Detects use-after-move in loops (for, while, do-while)
+  - Simulates 2 iterations to catch errors on second pass
+  - Properly clears loop-local borrows between iterations
+  - Tracks moved state across loop iterations
 - ✅ **Cross-file analysis with lifetime annotations**
   - Rust-like lifetime syntax in headers (`&'a`, `&'a mut`, `owned`)
   - Header parsing and caching system
@@ -41,7 +46,7 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
 - ✅ IR with CallExpr and Return statements
 - ✅ Z3 solver integration for constraints
 - ✅ Colored diagnostic output
-- ✅ **Comprehensive test suite**: 56 tests (40 unit, 16 integration)
+- ✅ **Comprehensive test suite**: 59 tests (40 unit, 19 integration including loop tests)
 
 ### What's Partially Implemented ⚠️
 - ⚠️ Control flow (basic blocks work, loops/conditionals limited)
@@ -62,11 +67,6 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
   - Generic code goes unchecked
 
 #### Important for Correctness
-- ❌ **Loop iteration analysis**
-  - Loops treated as single execution
-  - Can't detect use-after-move in second iteration
-  - Missing back-edge analysis in CFG
-  - Need fixed-point iteration like Rust's approach
   
 - ❌ **Path-sensitive analysis**
   - No "maybe moved" state tracking

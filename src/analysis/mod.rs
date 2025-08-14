@@ -90,121 +90,231 @@ fn check_function(function: &IrFunction) -> Result<Vec<String>, String> {
     for node_idx in function.cfg.node_indices() {
         let block = &function.cfg[node_idx];
         
-        for statement in &block.statements {
-            match statement {
-                crate::ir::IrStatement::Move { from, to } => {
-                    // Check if 'from' is owned and not moved
-                    let from_state = ownership_tracker.get_ownership(from);
-                    
-                    // Can't move from a reference
-                    if ownership_tracker.is_reference(from) {
-                        errors.push(format!(
-                            "Cannot move out of '{}' because it is behind a reference",
-                            from
-                        ));
-                        continue;
+        // Process statements, handling loops specially
+        let mut i = 0;
+        while i < block.statements.len() {
+            let statement = &block.statements[i];
+            
+            // Check if we're entering a loop
+            if matches!(statement, crate::ir::IrStatement::EnterLoop) {
+                // Find the matching ExitLoop
+                let mut loop_end = i + 1;
+                let mut loop_depth = 1;
+                while loop_end < block.statements.len() && loop_depth > 0 {
+                    match &block.statements[loop_end] {
+                        crate::ir::IrStatement::EnterLoop => loop_depth += 1,
+                        crate::ir::IrStatement::ExitLoop => loop_depth -= 1,
+                        _ => {}
                     }
-                    
-                    if from_state == Some(&OwnershipState::Moved) {
-                        errors.push(format!(
-                            "Use after move: variable '{}' has already been moved",
-                            from
-                        ));
-                    }
-                    
-                    // Handle temporary move markers (from std::move in function calls)
-                    if to.starts_with("_temp_move_") || to.starts_with("_moved_") {
-                        // Just mark the source as moved, don't create the temporary
-                        ownership_tracker.set_ownership(from.clone(), OwnershipState::Moved);
-                    } else {
-                        // Transfer ownership for regular moves
-                        ownership_tracker.set_ownership(from.clone(), OwnershipState::Moved);
-                        ownership_tracker.set_ownership(to.clone(), OwnershipState::Owned);
-                    }
+                    loop_end += 1;
                 }
                 
-                crate::ir::IrStatement::Borrow { from, to, kind } => {
-                    // Check if the source is accessible
-                    let from_state = ownership_tracker.get_ownership(from);
-                    
-                    if from_state == Some(&OwnershipState::Moved) {
-                        errors.push(format!(
-                            "Cannot borrow '{}' because it has been moved",
-                            from
-                        ));
-                        continue;
+                // Process the loop body twice to simulate 2 iterations
+                let loop_body = &block.statements[i+1..loop_end-1];
+                
+                // First iteration
+                ownership_tracker.enter_loop();
+                
+                // Track variables declared in the loop
+                let mut loop_local_vars = HashSet::new();
+                
+                for loop_stmt in loop_body {
+                    // Track variable declarations in the loop
+                    if let crate::ir::IrStatement::Borrow { to, .. } = loop_stmt {
+                        loop_local_vars.insert(to.clone());
                     }
-                    
-                    // Check existing borrows
-                    let current_borrows = ownership_tracker.get_borrows(from);
-                    
-                    match kind {
-                        BorrowKind::Immutable => {
-                            // Can have multiple immutable borrows, but not if there's a mutable borrow
-                            if current_borrows.has_mutable {
-                                errors.push(format!(
-                                    "Cannot create immutable reference to '{}': already mutably borrowed",
-                                    from
-                                ));
-                            }
-                            // In C++, const references are allowed even when the value is being modified
-                            // through another path, but we enforce Rust's stricter rules
-                        }
-                        BorrowKind::Mutable => {
-                            // Can only have one mutable borrow, and no immutable borrows
-                            if current_borrows.immutable_count > 0 {
-                                errors.push(format!(
-                                    "Cannot create mutable reference to '{}': already immutably borrowed",
-                                    from
-                                ));
-                            } else if current_borrows.has_mutable {
-                                errors.push(format!(
-                                    "Cannot create mutable reference to '{}': already mutably borrowed",
-                                    from
-                                ));
-                            }
-                        }
-                    }
-                    
-                    // Record the borrow
-                    ownership_tracker.add_borrow(from.clone(), to.clone(), kind.clone());
-                    ownership_tracker.mark_as_reference(to.clone(), *kind == BorrowKind::Mutable);
+                    process_statement(loop_stmt, &mut ownership_tracker, &mut errors);
                 }
                 
-                crate::ir::IrStatement::Assign { lhs, rhs } => {
-                    // Check if we're trying to modify through a const reference
-                    if ownership_tracker.is_reference(lhs) && !ownership_tracker.is_mutable_reference(lhs) {
-                        errors.push(format!(
-                            "Cannot assign to '{}' through const reference",
-                            lhs
-                        ));
-                    }
-                    
-                    // Check if the rhs uses a moved variable
-                    if let crate::ir::IrExpression::Variable(rhs_var) = rhs {
-                        if ownership_tracker.get_ownership(rhs_var) == Some(&OwnershipState::Moved) {
-                            errors.push(format!(
-                                "Use after move: variable '{}' has been moved",
-                                rhs_var
-                            ));
-                        }
-                    }
+                // Save state after first iteration (but only for non-loop-local variables)
+                let state_after_first = ownership_tracker.ownership.clone();
+                
+                // Clear loop-local borrows at end of first iteration
+                ownership_tracker.clear_loop_locals(&loop_local_vars);
+                
+                // Second iteration - check for use-after-move
+                for loop_stmt in loop_body {
+                    // Before processing each statement in second iteration,
+                    // check if it would cause use-after-move (but only for non-loop-local vars)
+                    check_statement_for_loop_errors(loop_stmt, &state_after_first, &mut errors);
+                    process_statement(loop_stmt, &mut ownership_tracker, &mut errors);
                 }
                 
-                crate::ir::IrStatement::EnterScope => {
-                    ownership_tracker.enter_scope();
-                }
+                // Clear loop-local borrows at end of second iteration
+                ownership_tracker.clear_loop_locals(&loop_local_vars);
                 
-                crate::ir::IrStatement::ExitScope => {
-                    ownership_tracker.exit_scope();
-                }
+                ownership_tracker.exit_loop();
                 
-                _ => {}
+                // Skip past the loop
+                i = loop_end;
+            } else {
+                // Normal statement processing
+                process_statement(statement, &mut ownership_tracker, &mut errors);
+                i += 1;
             }
         }
     }
     
     Ok(errors)
+}
+
+// Helper function to check for loop-specific errors in second iteration
+fn check_statement_for_loop_errors(
+    statement: &crate::ir::IrStatement,
+    state_after_first: &HashMap<String, OwnershipState>,
+    errors: &mut Vec<String>,
+) {
+    match statement {
+        crate::ir::IrStatement::Move { from, .. } => {
+            if let Some(state) = state_after_first.get(from) {
+                if *state == OwnershipState::Moved {
+                    errors.push(format!(
+                        "Use after move in loop: variable '{}' was moved in first iteration and used again in second iteration",
+                        from
+                    ));
+                }
+            }
+        }
+        crate::ir::IrStatement::Assign { rhs, .. } => {
+            if let crate::ir::IrExpression::Variable(var) = rhs {
+                if let Some(state) = state_after_first.get(var) {
+                    if *state == OwnershipState::Moved {
+                        errors.push(format!(
+                            "Use after move in loop: variable '{}' was moved in first iteration and used again in second iteration",
+                            var
+                        ));
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+// Extract statement processing logic into a separate function
+fn process_statement(
+    statement: &crate::ir::IrStatement,
+    ownership_tracker: &mut OwnershipTracker,
+    errors: &mut Vec<String>,
+) {
+    match statement {
+        crate::ir::IrStatement::Move { from, to } => {
+            // Check if 'from' is owned and not moved
+            let from_state = ownership_tracker.get_ownership(from);
+            
+            // Can't move from a reference
+            if ownership_tracker.is_reference(from) {
+                errors.push(format!(
+                    "Cannot move out of '{}' because it is behind a reference",
+                    from
+                ));
+                return;
+            }
+            
+            if from_state == Some(&OwnershipState::Moved) {
+                errors.push(format!(
+                    "Use after move: variable '{}' has already been moved",
+                    from
+                ));
+            }
+            
+            // Handle temporary move markers (from std::move in function calls)
+            if to.starts_with("_temp_move_") || to.starts_with("_moved_") {
+                // Just mark the source as moved, don't create the temporary
+                ownership_tracker.set_ownership(from.clone(), OwnershipState::Moved);
+            } else {
+                // Transfer ownership for regular moves
+                ownership_tracker.set_ownership(from.clone(), OwnershipState::Moved);
+                ownership_tracker.set_ownership(to.clone(), OwnershipState::Owned);
+            }
+        }
+        
+        crate::ir::IrStatement::Borrow { from, to, kind } => {
+            // Check if the source is accessible
+            let from_state = ownership_tracker.get_ownership(from);
+            
+            if from_state == Some(&OwnershipState::Moved) {
+                errors.push(format!(
+                    "Cannot borrow '{}' because it has been moved",
+                    from
+                ));
+                return;
+            }
+            
+            // Check existing borrows
+            let current_borrows = ownership_tracker.get_borrows(from);
+            
+            match kind {
+                BorrowKind::Immutable => {
+                    // Can have multiple immutable borrows, but not if there's a mutable borrow
+                    if current_borrows.has_mutable {
+                        errors.push(format!(
+                            "Cannot create immutable reference to '{}': already mutably borrowed",
+                            from
+                        ));
+                    }
+                    // In C++, const references are allowed even when the value is being modified
+                    // through another path, but we enforce Rust's stricter rules
+                }
+                BorrowKind::Mutable => {
+                    // Can only have one mutable borrow, and no immutable borrows
+                    if current_borrows.immutable_count > 0 {
+                        errors.push(format!(
+                            "Cannot create mutable reference to '{}': already immutably borrowed",
+                            from
+                        ));
+                    } else if current_borrows.has_mutable {
+                        errors.push(format!(
+                            "Cannot create mutable reference to '{}': already mutably borrowed",
+                            from
+                        ));
+                    }
+                }
+            }
+            
+            // Record the borrow
+            ownership_tracker.add_borrow(from.clone(), to.clone(), kind.clone());
+            ownership_tracker.mark_as_reference(to.clone(), *kind == BorrowKind::Mutable);
+        }
+        
+        crate::ir::IrStatement::Assign { lhs, rhs } => {
+            // Check if we're trying to modify through a const reference
+            if ownership_tracker.is_reference(lhs) && !ownership_tracker.is_mutable_reference(lhs) {
+                errors.push(format!(
+                    "Cannot assign to '{}' through const reference",
+                    lhs
+                ));
+            }
+            
+            // Check if the rhs uses a moved variable
+            if let crate::ir::IrExpression::Variable(rhs_var) = rhs {
+                if ownership_tracker.get_ownership(rhs_var) == Some(&OwnershipState::Moved) {
+                    errors.push(format!(
+                        "Use after move: variable '{}' has been moved",
+                        rhs_var
+                    ));
+                }
+            }
+        }
+        
+        crate::ir::IrStatement::EnterScope => {
+            ownership_tracker.enter_scope();
+        }
+        
+        crate::ir::IrStatement::ExitScope => {
+            ownership_tracker.exit_scope();
+        }
+        
+        crate::ir::IrStatement::EnterLoop => {
+            // Handled at the higher level
+        }
+        
+        crate::ir::IrStatement::ExitLoop => {
+            // Handled at the higher level
+        }
+        
+        _ => {}
+    }
 }
 
 struct OwnershipTracker {
@@ -213,6 +323,16 @@ struct OwnershipTracker {
     reference_info: HashMap<String, ReferenceInfo>,
     // Stack of scopes, each scope tracks borrows created in it
     scope_stack: Vec<ScopeInfo>,
+    // Loop tracking
+    loop_depth: usize,
+    // Save state when entering a loop (for 2nd iteration checking)
+    loop_entry_states: Vec<LoopEntryState>,
+}
+
+#[derive(Clone)]
+struct LoopEntryState {
+    ownership: HashMap<String, OwnershipState>,
+    borrows: HashMap<String, BorrowInfo>,
 }
 
 #[derive(Default, Clone)]
@@ -241,6 +361,8 @@ impl OwnershipTracker {
             borrows: HashMap::new(),
             reference_info: HashMap::new(),
             scope_stack: Vec::new(),
+            loop_depth: 0,
+            loop_entry_states: Vec::new(),
         };
         // Start with a root scope
         tracker.scope_stack.push(ScopeInfo::default());
@@ -317,6 +439,80 @@ impl OwnershipTracker {
             .get(var)
             .map(|info| info.is_reference && info.is_mutable)
             .unwrap_or(false)
+    }
+    
+    fn enter_loop(&mut self) {
+        // Save current state when entering a loop
+        // This state represents the state at the END of the first iteration
+        // which is what we'll use to check the BEGINNING of the second iteration
+        self.loop_entry_states.push(LoopEntryState {
+            ownership: self.ownership.clone(),
+            borrows: self.borrows.clone(),
+        });
+        self.loop_depth += 1;
+    }
+    
+    fn exit_loop(&mut self) {
+        if self.loop_depth > 0 {
+            self.loop_depth -= 1;
+            
+            // When exiting a loop, we simulate having run it twice
+            // The current state is after one iteration
+            // We saved the state at loop entry, now apply the second iteration effects
+            if let Some(entry_state) = self.loop_entry_states.pop() {
+                // The key insight: variables that were moved in the loop body
+                // will be moved at the START of the second iteration
+                // So check if any variables that are currently Moved
+                // were NOT moved at loop entry
+                for (var, current_state) in &self.ownership {
+                    if *current_state == OwnershipState::Moved {
+                        // If this variable was Owned at loop entry,
+                        // it means it was moved during the loop body
+                        // On second iteration, it would already be Moved
+                        if let Some(entry_ownership) = entry_state.ownership.get(var) {
+                            if *entry_ownership == OwnershipState::Owned {
+                                // Keep it as Moved - this correctly represents
+                                // the state after 2 iterations
+                                // The error will be caught if the variable is used
+                                // in the loop body (which we already processed)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    fn clear_loop_locals(&mut self, loop_locals: &HashSet<String>) {
+        // Clear borrows for loop-local variables
+        for local_var in loop_locals {
+            // Remove from reference info
+            self.reference_info.remove(local_var);
+            
+            // Remove from all borrow tracking
+            for borrow_info in self.borrows.values_mut() {
+                borrow_info.borrowers.remove(local_var);
+                // We should also decrement counts, but need to track the kind
+                // For simplicity, we'll rebuild the counts
+            }
+            
+            // Remove the ownership entry for loop-local variables
+            self.ownership.remove(local_var);
+        }
+        
+        // Clean up empty borrow entries and recalculate counts
+        for (_, borrow_info) in self.borrows.iter_mut() {
+            // Reset counts based on remaining borrowers
+            // This is a simplification - in a real implementation we'd track
+            // the kind of each borrow
+            if borrow_info.borrowers.is_empty() {
+                borrow_info.immutable_count = 0;
+                borrow_info.has_mutable = false;
+            }
+        }
+        
+        // Remove empty entries
+        self.borrows.retain(|_, info| !info.borrowers.is_empty());
     }
 }
 
