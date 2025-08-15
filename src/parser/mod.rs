@@ -4,7 +4,6 @@ use std::path::Path;
 pub mod ast_visitor;
 pub mod annotations;
 pub mod header_cache;
-pub mod unsafe_scanner;
 pub mod safety_annotations;
 
 pub use ast_visitor::{CppAst, Function, Statement, Expression};

@@ -49,16 +49,14 @@ namespace safe_code {
     }
 }
 
-// Example 4: Unsafe regions within safe functions
-// @safe
+// Example 4: Blocks within safe functions
+// @safe  
 void func6() {
     int x = 42;
     int& ref = x;  // OK
     
-    // @unsafe
-    int& ref2 = x;  // Not checked - in unsafe region
-    int& ref3 = x;  // Not checked - in unsafe region  
-    // @endunsafe
+    // Can't have inline unsafe blocks anymore - @unsafe only applies to next element
+    // If you need unsafe code, put it in a separate function marked @unsafe
     
-    const int& ref4 = x;  // ERROR: mixing mutable and immutable borrows
+    const int& ref2 = x;  // ERROR: mixing mutable and immutable borrows
 }

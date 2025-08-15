@@ -14,21 +14,14 @@ pub enum SafetyMode {
 pub struct SafetyContext {
     pub file_default: SafetyMode,
     pub function_overrides: Vec<(String, SafetyMode)>, // Function name -> safety mode
-    pub block_regions: Vec<UnsafeRegion>, // Line-based unsafe regions within safe functions
 }
 
-#[derive(Debug, Clone)]
-pub struct UnsafeRegion {
-    pub start_line: usize,
-    pub end_line: usize,
-}
 
 impl SafetyContext {
     pub fn new() -> Self {
         Self {
             file_default: SafetyMode::Default,
             function_overrides: Vec::new(),
-            block_regions: Vec::new(),
         }
     }
     
@@ -43,11 +36,6 @@ impl SafetyContext {
         
         // Fall back to file default
         self.file_default == SafetyMode::Safe
-    }
-    
-    /// Check if a line is in an unsafe region
-    pub fn is_line_unsafe(&self, line: usize) -> bool {
-        self.block_regions.iter().any(|r| line >= r.start_line && line <= r.end_line)
     }
 }
 
@@ -135,42 +123,7 @@ pub fn parse_safety_annotations(path: &Path) -> Result<SafetyContext, String> {
         }
     }
     
-    // Also scan for inline unsafe regions (// @unsafe ... // @endunsafe)
-    context.block_regions = scan_unsafe_regions(path)?;
-    
     Ok(context)
-}
-
-/// Scan for unsafe block regions marked with // @unsafe and // @endunsafe
-fn scan_unsafe_regions(path: &Path) -> Result<Vec<UnsafeRegion>, String> {
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open file for unsafe scanning: {}", e))?;
-    
-    let reader = BufReader::new(file);
-    let mut regions = Vec::new();
-    let mut unsafe_stack: Vec<usize> = Vec::new();
-    
-    for (line_num, line_result) in reader.lines().enumerate() {
-        let line = line_result.map_err(|e| format!("Failed to read line: {}", e))?;
-        let trimmed = line.trim();
-        
-        // Check for unsafe start marker
-        if (trimmed.contains("// @unsafe") || trimmed.contains("//@unsafe")) && 
-           !trimmed.contains("@endunsafe") {
-            unsafe_stack.push(line_num + 1); // Convert to 1-based line numbers
-        }
-        // Check for unsafe end marker
-        else if trimmed.contains("// @endunsafe") || trimmed.contains("//@endunsafe") {
-            if let Some(start) = unsafe_stack.pop() {
-                regions.push(UnsafeRegion {
-                    start_line: start,
-                    end_line: line_num + 1,
-                });
-            }
-        }
-    }
-    
-    Ok(regions)
 }
 
 /// Check if a line looks like a function declaration
@@ -282,32 +235,7 @@ void func() {}
         file.flush().unwrap();
         
         let context = parse_safety_annotations(file.path()).unwrap();
-        assert_eq!(context.file_default, SafetyMode::Safe);
-    }
-    
-    #[test]
-    fn test_unsafe_regions() {
-        let code = r#"
-// @safe
-void func() {
-    int x = 42;
-    // @unsafe
-    int& ref1 = x;
-    int& ref2 = x;
-    // @endunsafe
-    int& ref3 = x;
-}
-"#;
-        
-        let mut file = NamedTempFile::with_suffix(".cpp").unwrap();
-        file.write_all(code.as_bytes()).unwrap();
-        file.flush().unwrap();
-        
-        let context = parse_safety_annotations(file.path()).unwrap();
-        
-        assert!(!context.is_line_unsafe(4)); // int x = 42;
-        assert!(context.is_line_unsafe(6));  // int& ref1 = x; (in unsafe region)
-        assert!(context.is_line_unsafe(7));  // int& ref2 = x; (in unsafe region)
-        assert!(!context.is_line_unsafe(9)); // int& ref3 = x; (outside unsafe)
+        // @safe only applies to the next element (global_var), not the whole file
+        assert_eq!(context.file_default, SafetyMode::Default);
     }
 }

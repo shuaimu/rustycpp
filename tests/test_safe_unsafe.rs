@@ -33,9 +33,11 @@ void test() {
 }
 
 #[test]
-fn test_safe_file_annotation() {
-    // With @safe annotation at beginning, entire file is checked
+fn test_safe_namespace_annotation() {
+    // With @safe annotation on namespace, all contents are checked
     let test_code = r#"// @safe
+namespace myapp {
+
 class UniquePtr {
 public:
     UniquePtr(int* p) : ptr(p) {}
@@ -52,12 +54,14 @@ void test() {
     UniquePtr moved = move(ptr);
     UniquePtr again = move(ptr);  // Error: use after move
 }
+
+}  // namespace myapp
 "#;
     
-    fs::write("test_safe_file.cpp", test_code).unwrap();
+    fs::write("test_safe_namespace.cpp", test_code).unwrap();
     
     let output = Command::new("cargo")
-        .args(&["run", "--", "test_safe_file.cpp"])
+        .args(&["run", "--", "test_safe_namespace.cpp"])
         .env("Z3_SYS_Z3_HEADER", "/opt/homebrew/include/z3.h")
         .env("DYLD_LIBRARY_PATH", "/opt/homebrew/Cellar/llvm/19.1.7/lib")
         .output()
@@ -67,10 +71,10 @@ void test() {
     
     // Should detect use-after-move with @safe annotation
     assert!(stdout.contains("moved") || stdout.contains("violation"),
-            "Should detect errors with @safe file annotation. Output: {}", stdout);
+            "Should detect errors with @safe namespace annotation. Output: {}", stdout);
     
     // Clean up
-    let _ = fs::remove_file("test_safe_file.cpp");
+    let _ = fs::remove_file("test_safe_namespace.cpp");
 }
 
 #[test]
@@ -125,8 +129,10 @@ void safe_func() {
 
 #[test]
 fn test_unsafe_function_annotation() {
-    // Function explicitly marked as @unsafe in a safe file
+    // Function explicitly marked as @unsafe in a safe namespace
     let test_code = r#"// @safe
+namespace myapp {
+
 class UniquePtr {
 public:
     UniquePtr(int* p) : ptr(p) {}
@@ -146,12 +152,14 @@ void unsafe_func() {
     UniquePtr again = move(ptr);  // Not caught - function is @unsafe
 }
 
-// This function IS checked (safe file)
+// This function IS checked (safe namespace)
 void safe_func() {
     int value = 42;
     int& ref1 = value;
     int& ref2 = value;  // Error: double mutable borrow
 }
+
+}  // namespace myapp
 "#;
     
     fs::write("test_unsafe_func.cpp", test_code).unwrap();
