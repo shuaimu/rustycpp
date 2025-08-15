@@ -137,4 +137,83 @@ mod tests {
         assert!(error.is_some());
         assert!(error.unwrap().contains("dereference"));
     }
+    
+    #[test]
+    fn test_address_of_in_assignment() {
+        let stmt = Statement::Assignment {
+            lhs: "ptr".to_string(),
+            rhs: Expression::AddressOf(Box::new(Expression::Variable("x".to_string()))),
+            location: SourceLocation {
+                file: "test.cpp".to_string(),
+                line: 20,
+                column: 5,
+            },
+        };
+        
+        let error = check_parsed_statement_for_pointers(&stmt);
+        assert!(error.is_some());
+        assert!(error.unwrap().contains("address-of"));
+    }
+    
+    #[test]
+    fn test_pointer_in_function_call() {
+        let stmt = Statement::FunctionCall {
+            name: "process".to_string(),
+            args: vec![
+                Expression::Dereference(Box::new(Expression::Variable("ptr".to_string())))
+            ],
+            location: SourceLocation {
+                file: "test.cpp".to_string(),
+                line: 15,
+                column: 5,
+            },
+        };
+        
+        let error = check_parsed_statement_for_pointers(&stmt);
+        assert!(error.is_some());
+        let error_msg = error.unwrap();
+        assert!(error_msg.contains("function call"));
+        assert!(error_msg.contains("dereference"));
+    }
+    
+    #[test]
+    fn test_nested_pointer_operations() {
+        // Test *(&x) - dereference of address-of
+        let expr = Expression::Dereference(Box::new(
+            Expression::AddressOf(Box::new(Expression::Variable("x".to_string())))
+        ));
+        assert_eq!(contains_pointer_operation(&expr), Some("dereference"));
+    }
+    
+    #[test]
+    fn test_pointer_in_binary_op() {
+        let expr = Expression::BinaryOp {
+            left: Box::new(Expression::Dereference(Box::new(Expression::Variable("p1".to_string())))),
+            op: "+".to_string(),
+            right: Box::new(Expression::Variable("x".to_string())),
+        };
+        assert_eq!(contains_pointer_operation(&expr), Some("dereference"));
+    }
+    
+    #[test]
+    fn test_pointer_declaration_allowed() {
+        // Declaring a pointer variable should not trigger an error (only operations do)
+        let stmt = Statement::VariableDecl(Variable {
+            name: "ptr".to_string(),
+            type_name: "int*".to_string(),
+            is_reference: false,
+            is_pointer: true,
+            is_const: false,
+            is_unique_ptr: false,
+            is_shared_ptr: false,
+            location: SourceLocation {
+                file: "test.cpp".to_string(),
+                line: 5,
+                column: 5,
+            },
+        });
+        
+        let error = check_parsed_statement_for_pointers(&stmt);
+        assert!(error.is_none(), "Pointer declaration should be allowed");
+    }
 }
