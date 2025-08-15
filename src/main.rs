@@ -92,12 +92,29 @@ fn analyze_file(path: &PathBuf, include_paths: &[PathBuf], compile_commands: Opt
     // Parse safety annotations using the unified rule
     let safety_context = parser::safety_annotations::parse_safety_annotations(path)?;
     
-    // Check for unsafe pointer operations in safe functions
+    // Build a set of known safe functions from the safety context
+    let mut known_safe_functions = std::collections::HashSet::new();
+    for (func_name, mode) in &safety_context.function_overrides {
+        if *mode == parser::safety_annotations::SafetyMode::Safe {
+            known_safe_functions.insert(func_name.clone());
+        }
+    }
+    
+    // Check for unsafe pointer operations and unsafe propagation in safe functions
     let mut violations = Vec::new();
     for function in &ast.functions {
         if safety_context.should_check_function(&function.name) {
+            // Check for pointer operations
             let pointer_errors = analysis::pointer_safety::check_parsed_function_for_pointers(function);
             violations.extend(pointer_errors);
+            
+            // Check for calls to unsafe functions
+            let propagation_errors = analysis::unsafe_propagation::check_unsafe_propagation(
+                function,
+                &safety_context,
+                &known_safe_functions
+            );
+            violations.extend(propagation_errors);
         }
     }
     

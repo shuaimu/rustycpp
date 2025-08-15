@@ -9,6 +9,7 @@ pub mod lifetime_checker;
 pub mod scope_lifetime;
 pub mod lifetime_inference;
 pub mod pointer_safety;
+pub mod unsafe_propagation;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]

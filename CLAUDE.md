@@ -4,7 +4,7 @@
 
 This is a Rust-based static analyzer that applies Rust's ownership and borrowing rules to C++ code. The goal is to catch memory safety issues at compile-time without runtime overhead.
 
-## Current State (Updated: Added pointer safety checking)
+## Current State (Updated: Added unsafe propagation checking)
 
 ### What's Fully Implemented ✅
 - ✅ **Complete reference borrow checking** for C++ const and mutable references
@@ -69,11 +69,17 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
   - Dereference (`*ptr`) requires unsafe context
   - Type-based detection to distinguish & from *
   - References remain safe (not raw pointers)
+- ✅ **Unsafe propagation checking**
+  - Safe functions cannot call unmarked or explicitly unsafe functions
+  - Requires explicit @unsafe annotation for unsafe calls in safe context
+  - Whitelisted standard library functions (printf, malloc, move, etc.)
+  - Proper error reporting with function names and locations
+  - Comprehensive test coverage (10+ tests)
 - ✅ **Standalone binary support**
   - Build with `cargo build --release`
   - Embeds library paths (no env vars needed at runtime)
   - Platform-specific RPATH configuration
-- ✅ **Comprehensive test suite**: 95 tests (including pointer safety, move detection, borrow checking)
+- ✅ **Comprehensive test suite**: 100+ tests (including pointer safety, move detection, borrow checking, unsafe propagation)
 
 ### What's Partially Implemented ⚠️
 - ⚠️ Control flow (basic blocks work, loops/conditionals limited)
@@ -355,10 +361,11 @@ Use after move: variable 'x' has been moved
 ## Recent Achievements
 
 Latest session successfully implemented:
-1. ✅ **Pointer safety checking** - Raw pointer operations require unsafe context
-2. ✅ **Type-based operator detection** - Distinguish & from * using type analysis
-3. ✅ **Comprehensive test coverage** - Added 15 new tests for pointer safety
-4. ✅ **Clarified shared_ptr handling** - Move detection is sufficient
+1. ✅ **Unsafe propagation checking** - Safe functions cannot call unmarked/unsafe functions
+2. ✅ **Pointer safety checking** - Raw pointer operations require unsafe context
+3. ✅ **Type-based operator detection** - Distinguish & from * using type analysis
+4. ✅ **Comprehensive test coverage** - Added 20+ new tests for safety features
+5. ✅ **Clarified shared_ptr handling** - Move detection is sufficient
 
 Previous achievements:
 - ✅ Simplified @unsafe annotation to match @safe behavior
