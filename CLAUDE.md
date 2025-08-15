@@ -4,7 +4,7 @@
 
 This is a Rust-based static analyzer that applies Rust's ownership and borrowing rules to C++ code. The goal is to catch memory safety issues at compile-time without runtime overhead.
 
-## Current State (Updated: Simplified @unsafe to match @safe behavior)
+## Current State (Updated: Added pointer safety checking)
 
 ### What's Fully Implemented ✅
 - ✅ **Complete reference borrow checking** for C++ const and mutable references
@@ -63,7 +63,17 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
 - ✅ IR with CallExpr and Return statements
 - ✅ Z3 solver integration for constraints
 - ✅ Colored diagnostic output
-- ✅ **Comprehensive test suite**: 70+ tests (40 unit, 30+ integration including loop, conditional, and safe/unsafe tests)
+- ✅ **Raw pointer safety checking (Rust-like)**
+  - Detects unsafe pointer operations in safe code
+  - Address-of (`&x`) requires unsafe context
+  - Dereference (`*ptr`) requires unsafe context
+  - Type-based detection to distinguish & from *
+  - References remain safe (not raw pointers)
+- ✅ **Standalone binary support**
+  - Build with `cargo build --release`
+  - Embeds library paths (no env vars needed at runtime)
+  - Platform-specific RPATH configuration
+- ✅ **Comprehensive test suite**: 95 tests (including pointer safety, move detection, borrow checking)
 
 ### What's Partially Implemented ⚠️
 - ⚠️ Control flow (basic blocks work, loops/conditionals limited)
@@ -73,15 +83,17 @@ This is a Rust-based static analyzer that applies Rust's ownership and borrowing
 ### What's Not Implemented Yet ❌
 
 #### Critical for Modern C++
-- ✅ **Basic unique_ptr support through move detection**
-  - std::move() detection catches use-after-move for unique_ptr
-  - C++ compiler already prevents copying unique_ptr
-  - Main safety issue (use-after-move) is handled
+- ✅ **Smart pointer safety through move detection**
+  - `unique_ptr`: use-after-move detected via std::move()
+  - `shared_ptr`: use-after-move detected (explicit moves)
+  - C++ compiler prevents illegal copies
+  - Main safety issues are covered
   
 - ❌ **Advanced smart pointer features**
-  - No reference counting for shared_ptr
+  - No circular reference detection for shared_ptr
+  - No weak_ptr validity checking (runtime issue)
   - No member function calls (reset, release, get)
-  - No weak_ptr cycle detection
+  - Thread safety not analyzed
   
 - ❌ **Templates** 
   - Template declarations ignored
@@ -266,8 +278,26 @@ cargo build --release
 2. **Template Syntax**: Can't parse `std::unique_ptr<T>` or other templates
 3. **Limited C++ Support**: Lambdas, virtual functions, and advanced features not supported
 4. **No Method Calls**: Can't parse `.get()`, `->operator`, etc.
+5. **Left-side dereference**: `*ptr = value` not always detected (assignment target)
 
 ## Key Design Insights
+
+### Why shared_ptr Doesn't Need Special Handling
+
+Our move detection is sufficient for `shared_ptr` safety because:
+- **Copying is safe** - Multiple owners are allowed by design
+- **Move detection covers the risk** - `std::move(shared_ptr)` is detected
+- **Reference counting is runtime** - Not a compile-time safety issue
+- **Circular references** - Too complex for static analysis (Rust has same issue with `Rc<T>`)
+- **Thread safety** - Outside scope of borrow checking
+
+What we DO catch:
+- ✅ Use after explicit move: `auto sp2 = std::move(sp1); *sp1;`
+
+What we DON'T catch (and shouldn't):
+- ❌ Circular references (requires whole-program analysis)
+- ❌ Weak pointer validity (runtime issue)
+- ❌ Data races (requires concurrency analysis)
 
 ### Why No .cpp-to-.cpp Analysis Needed
 
@@ -324,32 +354,35 @@ Use after move: variable 'x' has been moved
 
 ## Recent Achievements
 
-This session successfully implemented:
-1. ✅ Simplified @unsafe annotation to match @safe behavior
-2. ✅ Removed @endunsafe - both annotations now only affect next element
-3. ✅ Verified move detection works correctly for all cases
-4. ✅ Clarified that unique_ptr safety is handled by move detection
-5. ✅ Created standalone binary support with embedded library paths
-6. ✅ Fixed safety annotation interpretation bugs
-7. ✅ Updated test suite to match new annotation semantics
+Latest session successfully implemented:
+1. ✅ **Pointer safety checking** - Raw pointer operations require unsafe context
+2. ✅ **Type-based operator detection** - Distinguish & from * using type analysis
+3. ✅ **Comprehensive test coverage** - Added 15 new tests for pointer safety
+4. ✅ **Clarified shared_ptr handling** - Move detection is sufficient
+
+Previous achievements:
+- ✅ Simplified @unsafe annotation to match @safe behavior
+- ✅ Removed @endunsafe - both annotations now only affect next element
+- ✅ Verified move detection works for all smart pointers
+- ✅ Created standalone binary support with embedded library paths
 
 ## Next Priority Tasks
 
 ### High Priority
-1. **Template parsing** - Required for std::unique_ptr<T> and real C++ code
-2. **Method calls and member access** - For .get(), .release(), ->operator
+1. **Template parsing** - Required for `std::unique_ptr<T>` and modern C++
+2. **Method calls and member access** - For `.get()`, `.release()`, `->operator`
 3. **Constructor/Destructor tracking** - RAII patterns
 
 ### Medium Priority  
-4. **std::shared_ptr reference counting** - Different ownership model
-5. **Reassignment tracking** - Variable becomes valid after reassignment
-6. **Better error messages** - Code snippets and fix suggestions
+4. **Reassignment tracking** - Variable becomes valid after reassignment
+5. **Better error messages** - Code snippets and fix suggestions
+6. **Switch/case statements** - Common control flow
 
 ### Low Priority
-7. **Lambda captures** - Complex lifetime tracking
-8. **Exception handling** - Stack unwinding
-9. **IDE integration (LSP)** - CLI works for now
-10. **Inter-procedural analysis** - Cross-function tracking
+7. **Circular reference detection** - Complex whole-program analysis
+8. **Lambda captures** - Complex lifetime tracking
+9. **Exception handling** - Stack unwinding
+10. **IDE integration (LSP)** - CLI works for now
 
 ## Contact with Original Requirements
 
@@ -358,5 +391,6 @@ The tool achieves the core goals:
 - ✅ **Detect use-after-move** - Fully working with move() detection
 - ✅ **Detect multiple mutable borrows** - Fully working
 - ✅ **Track lifetimes** - Complete with inference and validation
+- ✅ **Detect unsafe pointer operations** - Rust-like pointer safety
 - ✅ **Provide clear error messages** - With locations and context
 - ✅ **Support gradual adoption** - Per-function/namespace opt-in with @safe
