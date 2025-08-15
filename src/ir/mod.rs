@@ -388,8 +388,10 @@ fn convert_statement(
                     }
                 }
                 crate::parser::Expression::Move(inner) => {
+                    eprintln!("DEBUG IR: Processing Move expression in assignment");
                     // This is an explicit std::move call
                     if let crate::parser::Expression::Variable(var) = inner.as_ref() {
+                        eprintln!("DEBUG IR: Creating IrStatement::Move from '{}' to '{}'", var, lhs);
                         // Transfer type from source if needed
                         let source_type = variables.get(var).map(|info| info.ty.clone());
                         if let Some(var_info) = variables.get_mut(lhs) {
@@ -402,6 +404,7 @@ fn convert_statement(
                             to: lhs.clone(),
                         }]))
                     } else {
+                        eprintln!("DEBUG IR: Move expression doesn't contain a variable");
                         // Handle nested expressions if needed
                         Ok(None)
                     }

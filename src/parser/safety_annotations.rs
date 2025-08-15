@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use clang::Entity;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SafetyMode {
     Safe,    // Enforce borrow checking
     Unsafe,  // Skip borrow checking
@@ -61,10 +61,10 @@ pub fn parse_safety_annotations(path: &Path) -> Result<SafetyContext, String> {
     let mut context = SafetyContext::new();
     let mut pending_annotation: Option<SafetyMode> = None;
     let mut in_comment_block = false;
-    let mut current_line = 0;
+    let mut _current_line = 0;
     
     for line_result in reader.lines() {
-        current_line += 1;
+        _current_line += 1;
         let line = line_result.map_err(|e| format!("Failed to read line: {}", e))?;
         let trimmed = line.trim();
         
@@ -110,25 +110,27 @@ pub fn parse_safety_annotations(path: &Path) -> Result<SafetyContext, String> {
         
         // If we have a pending annotation and found code, apply it
         if let Some(annotation) = pending_annotation.take() {
+            eprintln!("DEBUG SAFETY: Applying {:?} annotation to: {}", annotation, trimmed);
             // Check what kind of code element follows
             if trimmed.starts_with("namespace") || 
                (trimmed.contains("namespace") && !trimmed.contains("using")) {
-                // Namespace declaration - applies to whole file/namespace
+                // Namespace declaration - applies to whole namespace contents
                 context.file_default = annotation;
+                eprintln!("DEBUG SAFETY: Set file default to {:?} (namespace)", annotation);
             } else if is_function_declaration(trimmed) {
-                // Function declaration - extract function name and apply
+                // Function declaration - extract function name and apply ONLY to this function
                 if let Some(func_name) = extract_function_name(trimmed) {
-                    context.function_overrides.push((func_name, annotation));
+                    context.function_overrides.push((func_name.clone(), annotation));
+                    eprintln!("DEBUG SAFETY: Set function '{}' to {:?}", func_name, annotation);
                 }
             } else if trimmed == "{" || trimmed.ends_with("{") {
                 // Block start - this would be an unsafe block within safe code
                 // For now, we'll handle this through the separate unsafe region scanner
                 // This is a placeholder for future enhancement
             } else {
-                // Any other code - if this is the first code in file, apply as file default
-                if context.file_default == SafetyMode::Default {
-                    context.file_default = annotation;
-                }
+                // Any other code - annotation was consumed but doesn't apply to whole file
+                // It only applied to this single statement/declaration
+                eprintln!("DEBUG SAFETY: Annotation consumed by single statement: {}", trimmed);
             }
         }
     }

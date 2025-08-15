@@ -69,10 +69,13 @@ pub fn check_borrows_with_safety_context(
     
     // Check each function based on its safety mode
     for function in &program.functions {
+        eprintln!("DEBUG: Checking function '{}'", function.name);
         // Check if this function should be checked
         if !safety_context.should_check_function(&function.name) {
+            eprintln!("DEBUG: Skipping unsafe function '{}'", function.name);
             continue; // Skip unsafe functions
         }
+        eprintln!("DEBUG: Function '{}' is safe, checking...", function.name);
         
         let function_errors = check_function(function)?;
         errors.extend(function_errors);
@@ -284,6 +287,7 @@ fn process_statement(
 ) {
     match statement {
         crate::ir::IrStatement::Move { from, to } => {
+            eprintln!("DEBUG ANALYSIS: Processing Move from '{}' to '{}'", from, to);
             // Skip checks if we're in an unsafe block
             if ownership_tracker.is_in_unsafe_block() {
                 // Still update ownership state for consistency
@@ -294,6 +298,7 @@ fn process_statement(
             
             // Check if 'from' is owned and not moved
             let from_state = ownership_tracker.get_ownership(from);
+            eprintln!("DEBUG ANALYSIS: '{}' state: {:?}", from, from_state);
             
             // Can't move from a reference
             if ownership_tracker.is_reference(from) {
