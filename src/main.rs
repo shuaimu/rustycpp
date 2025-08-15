@@ -92,11 +92,21 @@ fn analyze_file(path: &PathBuf, include_paths: &[PathBuf], compile_commands: Opt
     // Parse safety annotations using the unified rule
     let safety_context = parser::safety_annotations::parse_safety_annotations(path)?;
     
+    // Check for unsafe pointer operations in safe functions
+    let mut violations = Vec::new();
+    for function in &ast.functions {
+        if safety_context.should_check_function(&function.name) {
+            let pointer_errors = analysis::pointer_safety::check_parsed_function_for_pointers(function);
+            violations.extend(pointer_errors);
+        }
+    }
+    
     // Build intermediate representation with safety context
     let ir = ir::build_ir_with_safety_context(ast, safety_context.clone())?;
     
     // Perform borrow checking analysis with header knowledge and safety context
-    let violations = analysis::check_borrows_with_safety_context(ir, header_cache, safety_context)?;
+    let borrow_violations = analysis::check_borrows_with_safety_context(ir, header_cache, safety_context)?;
+    violations.extend(borrow_violations);
     
     Ok(violations)
 }

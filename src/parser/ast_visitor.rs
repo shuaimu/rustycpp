@@ -414,7 +414,25 @@ fn extract_expression(entity: &Entity) -> Option<Expression> {
             let children: Vec<Entity> = entity.get_children().into_iter().collect();
             if !children.is_empty() {
                 if let Some(inner) = extract_expression(&children[0]) {
-                    // Simplified - would need to check operator type
+                    // Try to determine the operator type
+                    // LibClang doesn't give us the operator directly, but we can check the types
+                    if let Some(result_type) = entity.get_type() {
+                        let type_str = type_to_string(&result_type);
+                        
+                        if let Some(child_type) = children[0].get_type() {
+                            let child_type_str = type_to_string(&child_type);
+                            
+                            // If child is pointer and result is not, it's dereference
+                            if child_type_str.contains('*') && !type_str.contains('*') {
+                                return Some(Expression::Dereference(Box::new(inner)));
+                            }
+                            // If child is not pointer but result is, it's address-of
+                            else if !child_type_str.contains('*') && type_str.contains('*') {
+                                return Some(Expression::AddressOf(Box::new(inner)));
+                            }
+                        }
+                    }
+                    // Default to address-of if we can't determine
                     return Some(Expression::AddressOf(Box::new(inner)));
                 }
             }
