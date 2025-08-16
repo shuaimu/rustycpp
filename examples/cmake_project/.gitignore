@@ -1,0 +1,8 @@
+build/
+*.o
+*.a
+*.so
+*.dylib
+compile_commands.json
+CMakeCache.txt
+CMakeFiles/
