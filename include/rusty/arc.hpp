@@ -56,12 +56,6 @@ public:
         return Arc<T>(new ControlBlock(std::move(value)));
     }
     
-    // Alternative name to avoid keyword conflict
-    // @lifetime: owned
-    static Arc<T> create(T value) {
-        return Arc<T>(new ControlBlock(std::move(value)));
-    }
-    
     // C++-friendly factory method (kept for compatibility)
     // @lifetime: owned
     static Arc<T> make(T value) {

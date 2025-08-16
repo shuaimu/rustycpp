@@ -31,12 +31,6 @@ public:
         return Box<T>(new T(std::move(value)));
     }
     
-    // Alternative name to avoid keyword conflict
-    // @lifetime: owned
-    static Box<T> create(T value) {
-        return Box<T>(new T(std::move(value)));
-    }
-    
     // C++-friendly factory method (kept for compatibility)
     // @lifetime: owned
     static Box<T> make(T value) {

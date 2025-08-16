@@ -55,12 +55,6 @@ public:
         return Rc<T>(new ControlBlock(std::move(value)));
     }
     
-    // Alternative name to avoid keyword conflict
-    // @lifetime: owned
-    static Rc<T> create(T value) {
-        return Rc<T>(new ControlBlock(std::move(value)));
-    }
-    
     // C++-friendly factory method (kept for compatibility)
     // @lifetime: owned
     static Rc<T> make(T value) {

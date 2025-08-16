@@ -14,8 +14,7 @@ This library provides C++ implementations of popular Rust types that work with t
 
 // Rust-idiomatic API
 auto box1 = rusty::Box<int>::new_(42);      // Box::new()
-auto box2 = rusty::Box<int>::create(42);     // Alternative
-auto box3 = rusty::box<int>(42);             // Short form
+auto box2 = rusty::box<int>(42);             // Short form
 
 // C++-friendly API (also supported)
 auto box4 = rusty::make_box<int>(42);
@@ -43,8 +42,7 @@ int* raw2 = box3.release();   // C++ style
 
 // Rust-idiomatic API
 auto arc1 = rusty::Arc<int>::new_(100);      // Arc::new()
-auto arc2 = rusty::Arc<int>::create(100);    // Alternative
-auto arc3 = rusty::arc<int>(100);            // Short form
+auto arc2 = rusty::arc<int>(100);            // Short form
 
 // C++-friendly API
 auto arc4 = rusty::make_arc<int>(100);

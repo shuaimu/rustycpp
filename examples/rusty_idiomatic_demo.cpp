@@ -18,9 +18,9 @@ void demo_box_rust_style() {
     auto box1 = rusty::Box<int>::new_(42);
     printf("Box::new_(42): %d\n", *box1);
     
-    // Alternative: Box::create()
-    auto box2 = rusty::Box<int>::create(100);
-    printf("Box::create(100): %d\n", *box2);
+    // Another Box
+    auto box2 = rusty::Box<int>::new_(100);
+    printf("Box::new_(100): %d\n", *box2);
     
     // Short form: rusty::box()
     auto box3 = rusty::box<int>(200);
@@ -45,8 +45,8 @@ void demo_arc_rust_style() {
     auto arc1 = rusty::Arc<int>::new_(42);
     printf("Arc::new_(42): %d, count: %zu\n", *arc1, arc1.strong_count());
     
-    // Alternative: Arc::create()
-    auto arc2 = rusty::Arc<int>::create(100);
+    // Another Arc
+    auto arc2 = rusty::Arc<int>::new_(100);
     
     // Short form: rusty::arc()
     auto arc3 = rusty::arc<int>(200);
@@ -200,7 +200,7 @@ void demo_combined_rust_style() {
     // Vec of Boxes
     auto vec = rusty::Vec<rusty::Box<int>>::new_();
     vec.push(rusty::Box<int>::new_(1));
-    vec.push(rusty::Box<int>::create(2));
+    vec.push(rusty::Box<int>::new_(2));
     vec.push(rusty::box<int>(3));
     
     printf("Vec<Box<int>> with %zu elements\n", vec.len());
