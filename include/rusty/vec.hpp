@@ -44,7 +44,24 @@ public:
     // Default constructor - empty vec
     Vec() : data(nullptr), length(0), capacity(0) {}
     
-    // Constructor with initial capacity
+    // Rust-idiomatic factory method - Vec::new()
+    // @lifetime: owned
+    static Vec<T> new_() {
+        return Vec<T>();
+    }
+    
+    // Rust-idiomatic factory with capacity - Vec::with_capacity()
+    // @lifetime: owned
+    static Vec<T> with_capacity(size_t cap) {
+        Vec<T> v;
+        if (cap > 0) {
+            v.data = static_cast<T*>(::operator new(cap * sizeof(T)));
+            v.capacity = cap;
+        }
+        return v;
+    }
+    
+    // Constructor with initial capacity (C++ style)
     explicit Vec(size_t initial_capacity) 
         : data(nullptr), length(0), capacity(0) {
         if (initial_capacity > 0) {

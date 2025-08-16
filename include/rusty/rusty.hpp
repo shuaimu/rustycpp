@@ -33,18 +33,25 @@ namespace rusty {
     template<typename T>
     using ResultInt = Result<T, int>;
     
-    // Smart pointer conversions
+    // Smart pointer conversions (Rust-idiomatic names)
+    template<typename T>
+    // @lifetime: owned
+    Box<T> from_raw(T* ptr) {
+        return Box<T>(ptr);
+    }
+    
+    // C++ style alias
     template<typename T>
     // @lifetime: owned
     Box<T> box_from_raw(T* ptr) {
-        return Box<T>(ptr);
+        return from_raw(ptr);
     }
     
     template<typename T>
     // @lifetime: owned
     Arc<T> arc_from_box(Box<T>&& box) {
-        T* ptr = box.release();
-        Arc<T> result = make_arc(std::move(*ptr));
+        T* ptr = box.into_raw();
+        Arc<T> result = Arc<T>::new_(std::move(*ptr));
         delete ptr;
         return result;
     }
@@ -52,11 +59,21 @@ namespace rusty {
     template<typename T>
     // @lifetime: owned
     Rc<T> rc_from_box(Box<T>&& box) {
-        T* ptr = box.release();
-        Rc<T> result = make_rc(std::move(*ptr));
+        T* ptr = box.into_raw();
+        Rc<T> result = Rc<T>::new_(std::move(*ptr));
         delete ptr;
         return result;
     }
+    
+    // Rust-style type aliases for convenience
+    template<typename T>
+    using Boxed = Box<T>;
+    
+    template<typename T>
+    using Shared = Arc<T>;
+    
+    template<typename T>
+    using RefCounted = Rc<T>;
 }
 
 #endif // RUSTY_HPP

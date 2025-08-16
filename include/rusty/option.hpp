@@ -94,7 +94,7 @@ public:
     // Explicit bool conversion
     explicit operator bool() const { return has_value; }
     
-    // Unwrap the value (panics if None)
+    // Unwrap the value (panics if None) - Rust style
     // @lifetime: owned
     T unwrap() {
         if (!has_value) {
@@ -104,6 +104,15 @@ public:
         value.~T();
         has_value = false;
         return result;
+    }
+    
+    // Expect with custom message - Rust style
+    // @lifetime: owned
+    T expect(const char* msg) {
+        if (!has_value) {
+            throw std::runtime_error(msg);
+        }
+        return unwrap();
     }
     
     // Unwrap with default value

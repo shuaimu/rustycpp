@@ -12,11 +12,21 @@ This library provides C++ implementations of popular Rust types that work with t
 ```cpp
 #include "rusty/box.hpp"
 
-// Create a Box
-auto box = rusty::make_box<int>(42);
+// Rust-idiomatic API
+auto box1 = rusty::Box<int>::new_(42);      // Box::new()
+auto box2 = rusty::Box<int>::create(42);     // Alternative
+auto box3 = rusty::box<int>(42);             // Short form
+
+// C++-friendly API (also supported)
+auto box4 = rusty::make_box<int>(42);
 
 // Move ownership
-auto box2 = std::move(box);  // box is now invalid
+auto box5 = std::move(box1);  // box1 is now invalid
+
+// Rust-style methods
+int* raw = box2.into_raw();   // Extract raw pointer (Rust style)
+// or
+int* raw2 = box3.release();   // C++ style
 
 // Automatic cleanup when Box goes out of scope
 ```
@@ -31,11 +41,16 @@ auto box2 = std::move(box);  // box is now invalid
 ```cpp
 #include "rusty/arc.hpp"
 
-// Create an Arc
-auto arc1 = rusty::make_arc<int>(100);
+// Rust-idiomatic API
+auto arc1 = rusty::Arc<int>::new_(100);      // Arc::new()
+auto arc2 = rusty::Arc<int>::create(100);    // Alternative
+auto arc3 = rusty::arc<int>(100);            // Short form
+
+// C++-friendly API
+auto arc4 = rusty::make_arc<int>(100);
 
 // Clone increases ref count
-auto arc2 = arc1.clone();
+auto arc5 = arc1.clone();
 
 // Thread-safe reference counting
 // Immutable access only
@@ -50,11 +65,15 @@ auto arc2 = arc1.clone();
 ```cpp
 #include "rusty/rc.hpp"
 
-// Create an Rc
-auto rc1 = rusty::make_rc<int>(50);
+// Rust-idiomatic API
+auto rc1 = rusty::Rc<int>::new_(50);        // Rc::new()
+auto rc2 = rusty::rc<int>(50);              // Short form
+
+// C++-friendly API
+auto rc3 = rusty::make_rc<int>(50);
 
 // Clone increases ref count
-auto rc2 = rc1.clone();
+auto rc4 = rc1.clone();
 
 // Single-threaded only (use Arc for multi-threading)
 ```
@@ -68,19 +87,27 @@ auto rc2 = rc1.clone();
 ```cpp
 #include "rusty/vec.hpp"
 
-// Create a Vec
-rusty::Vec<int> vec;
-vec.push(10);
-vec.push(20);
+// Rust-idiomatic API
+auto vec1 = rusty::Vec<int>::new_();           // Vec::new()
+auto vec2 = rusty::Vec<int>::with_capacity(10); // Vec::with_capacity()
+
+// Standard usage
+vec1.push(10);
+vec1.push(20);
 
 // Access elements
-int first = vec[0];
+int first = vec1[0];
 
 // Pop from back
-int last = vec.pop();
+int last = vec1.pop();
+
+// Rust-style methods
+bool empty = vec1.is_empty();
+size_t length = vec1.len();
+size_t capacity = vec1.cap();
 
 // Move semantics
-auto vec2 = std::move(vec);  // vec is now invalid
+auto vec3 = std::move(vec1);  // vec1 is now invalid
 ```
 
 **Guarantees:**

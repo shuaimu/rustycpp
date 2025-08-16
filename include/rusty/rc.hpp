@@ -49,7 +49,19 @@ public:
     // Default constructor - creates empty Rc
     Rc() : ptr(nullptr) {}
     
-    // Factory method - equivalent to Rc::new() in Rust
+    // Rust-idiomatic factory method - Rc::new()
+    // @lifetime: owned
+    static Rc<T> new_(T value) {
+        return Rc<T>(new ControlBlock(std::move(value)));
+    }
+    
+    // Alternative name to avoid keyword conflict
+    // @lifetime: owned
+    static Rc<T> create(T value) {
+        return Rc<T>(new ControlBlock(std::move(value)));
+    }
+    
+    // C++-friendly factory method (kept for compatibility)
     // @lifetime: owned
     static Rc<T> make(T value) {
         return Rc<T>(new ControlBlock(std::move(value)));
@@ -147,13 +159,20 @@ public:
     // Requires T to be copyable
     Rc<T> make_unique() const {
         if (ptr) {
-            return Rc<T>::make(ptr->value);
+            return Rc<T>::new_(ptr->value);
         }
         return Rc<T>();
     }
 };
 
-// Helper function to create an Rc
+// Rust-idiomatic factory function
+template<typename T, typename... Args>
+// @lifetime: owned
+Rc<T> rc(Args&&... args) {
+    return Rc<T>::new_(T(std::forward<Args>(args)...));
+}
+
+// C++-friendly factory function (kept for compatibility)
 template<typename T, typename... Args>
 // @lifetime: owned
 Rc<T> make_rc(Args&&... args) {

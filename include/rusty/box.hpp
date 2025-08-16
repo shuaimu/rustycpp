@@ -25,7 +25,19 @@ public:
     // @lifetime: owned
     explicit Box(T* p) : ptr(p) {}
     
-    // Factory method - equivalent to Box::new() in Rust
+    // Rust-idiomatic factory method - Box::new()
+    // @lifetime: owned
+    static Box<T> new_(T value) {
+        return Box<T>(new T(std::move(value)));
+    }
+    
+    // Alternative name to avoid keyword conflict
+    // @lifetime: owned
+    static Box<T> create(T value) {
+        return Box<T>(new T(std::move(value)));
+    }
+    
+    // C++-friendly factory method (kept for compatibility)
     // @lifetime: owned
     static Box<T> make(T value) {
         return Box<T>(new T(std::move(value)));
@@ -90,13 +102,19 @@ public:
         return is_valid();
     }
     
-    // Take ownership of the raw pointer (equivalent to Box::into_raw)
+    // Take ownership of the raw pointer (Rust: Box::into_raw)
     // After this, the Box is empty and caller is responsible for deletion
     // @lifetime: owned
-    T* release() {
+    T* into_raw() {
         T* temp = ptr;
         ptr = nullptr;
         return temp;
+    }
+    
+    // C++-style alias for into_raw
+    // @lifetime: owned
+    T* release() {
+        return into_raw();
     }
     
     // Get raw pointer without transferring ownership
@@ -112,7 +130,14 @@ public:
     }
 };
 
-// Helper function to create a Box (equivalent to Rust's Box::new)
+// Rust-idiomatic factory function
+template<typename T, typename... Args>
+// @lifetime: owned
+Box<T> box(Args&&... args) {
+    return Box<T>(new T(std::forward<Args>(args)...));
+}
+
+// C++-friendly factory function (kept for compatibility)
 template<typename T, typename... Args>
 // @lifetime: owned
 Box<T> make_box(Args&&... args) {

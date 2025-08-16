@@ -50,7 +50,19 @@ public:
     // Default constructor - creates empty Arc
     Arc() : ptr(nullptr) {}
     
-    // Factory method - equivalent to Arc::new() in Rust
+    // Rust-idiomatic factory method - Arc::new()
+    // @lifetime: owned
+    static Arc<T> new_(T value) {
+        return Arc<T>(new ControlBlock(std::move(value)));
+    }
+    
+    // Alternative name to avoid keyword conflict
+    // @lifetime: owned
+    static Arc<T> create(T value) {
+        return Arc<T>(new ControlBlock(std::move(value)));
+    }
+    
+    // C++-friendly factory method (kept for compatibility)
     // @lifetime: owned
     static Arc<T> make(T value) {
         return Arc<T>(new ControlBlock(std::move(value)));
@@ -145,7 +157,14 @@ public:
     }
 };
 
-// Helper function to create an Arc
+// Rust-idiomatic factory function
+template<typename T, typename... Args>
+// @lifetime: owned
+Arc<T> arc(Args&&... args) {
+    return Arc<T>::new_(T(std::forward<Args>(args)...));
+}
+
+// C++-friendly factory function (kept for compatibility)
 template<typename T, typename... Args>
 // @lifetime: owned
 Arc<T> make_arc(Args&&... args) {
