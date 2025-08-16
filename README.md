@@ -1,4 +1,4 @@
-# C++ Borrow Checker
+# Rusty C++ Checker
 
 A standalone static analyzer that enforces Rust-like ownership and borrowing rules for C++ code, bringing memory safety guarantees to existing C++ codebases without runtime overhead.
 
@@ -38,8 +38,8 @@ This project aims to catch memory safety issues at compile-time by applying Rust
 brew install llvm z3
 
 # Clone the repository
-git clone https://github.com/yourusername/cpp-borrow-checker
-cd cpp-borrow-checker
+git clone https://github.com/yourusername/rusty-cpp-checker
+cd rusty-cpp-checker
 
 # Build the project
 cargo build --release
@@ -61,8 +61,8 @@ sudo apt-get update
 sudo apt-get install llvm-14-dev libclang-14-dev libz3-dev
 
 # Clone and build
-git clone https://github.com/yourusername/cpp-borrow-checker
-cd cpp-borrow-checker
+git clone https://github.com/yourusername/rusty-cpp-checker
+cd rusty-cpp-checker
 cargo build --release
 ```
 
@@ -85,13 +85,13 @@ cargo build --release
 
 ```bash
 # Analyze a single file
-cpp-borrow-checker path/to/file.cpp
+rusty-cpp-checker path/to/file.cpp
 
 # Analyze with verbose output
-cpp-borrow-checker -vv path/to/file.cpp
+rusty-cpp-checker -vv path/to/file.cpp
 
 # Output in JSON format (for IDE integration)
-cpp-borrow-checker --format json path/to/file.cpp
+rusty-cpp-checker --format json path/to/file.cpp
 ```
 
 ### Standalone Binary (No Environment Variables Required)
@@ -103,11 +103,11 @@ For release distributions, we provide a standalone binary that doesn't require s
 ./build_release.sh
 
 # Install from distribution
-cd dist/cpp-borrow-checker-*/
+cd dist/rusty-cpp-checker-*/
 ./install.sh
 
 # Or use directly
-./cpp-borrow-checker-standalone file.cpp
+./rusty-cpp-checker-standalone file.cpp
 ```
 
 See [RELEASE.md](RELEASE.md) for details on building and distributing standalone binaries.

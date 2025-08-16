@@ -185,25 +185,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cpp-borrow-checker"
-version = "0.1.0"
-dependencies = [
- "clang",
- "clang-sys",
- "clap",
- "colored",
- "miette",
- "once_cell",
- "petgraph",
- "rayon",
- "regex",
- "serde",
- "serde_json",
- "tempfile",
- "z3",
-]
-
-[[package]]
 name = "crossbeam-deque"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -529,6 +510,25 @@ dependencies = [
  "libc",
  "linux-raw-sys",
  "windows-sys 0.60.2",
+]
+
+[[package]]
+name = "rusty-cpp-checker"
+version = "0.1.0"
+dependencies = [
+ "clang",
+ "clang-sys",
+ "clap",
+ "colored",
+ "miette",
+ "once_cell",
+ "petgraph",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "z3",
 ]
 
 [[package]]

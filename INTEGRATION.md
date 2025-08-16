@@ -2,7 +2,7 @@
 
 ## CMake Integration
 
-The C++ Borrow Checker provides seamless CMake integration for easy adoption in existing projects.
+The Rusty C++ Checker provides seamless CMake integration for easy adoption in existing projects.
 
 ### Quick Setup
 
@@ -69,7 +69,7 @@ For traditional Makefiles:
 
 ```makefile
 CXX = g++
-BORROW_CHECKER = cpp-borrow-checker
+BORROW_CHECKER = rusty-cpp-checker
 CXXFLAGS = -std=c++17
 
 # Add borrow checking rule
@@ -98,7 +98,7 @@ def cc_library_checked(name, srcs, **kwargs):
         name = name + "_check",
         srcs = srcs,
         outs = [name + ".checked"],
-        cmd = "cpp-borrow-checker $(SRCS) && touch $@",
+        cmd = "rusty-cpp-checker $(SRCS) && touch $@",
     )
     
     # Build library with check dependency
@@ -132,7 +132,7 @@ fn main() {
     let cpp_files = ["src/native.cpp", "src/bridge.cpp"];
     
     for file in &cpp_files {
-        let output = Command::new("cpp-borrow-checker")
+        let output = Command::new("rusty-cpp-checker")
             .arg(file)
             .output()
             .expect("Failed to run borrow checker");
@@ -175,11 +175,11 @@ jobs:
     - name: Build and install borrow checker
       run: |
         cargo build --release
-        sudo cp target/release/cpp-borrow-checker /usr/local/bin/
+        sudo cp target/release/rusty-cpp-checker /usr/local/bin/
     
     - name: Run borrow checks
       run: |
-        cpp-borrow-checker src/*.cpp
+        rusty-cpp-checker src/*.cpp
 ```
 
 ### GitLab CI
@@ -191,7 +191,7 @@ borrow-check:
     - apt-get update && apt-get install -y libclang-dev libz3-dev
     - cargo build --release
   script:
-    - ./target/release/cpp-borrow-checker src/*.cpp
+    - ./target/release/rusty-cpp-checker src/*.cpp
 ```
 
 ### Jenkins
@@ -203,7 +203,7 @@ pipeline {
             steps {
                 sh '''
                     cargo build --release
-                    find src -name "*.cpp" -exec ./target/release/cpp-borrow-checker {} \\;
+                    find src -name "*.cpp" -exec ./target/release/rusty-cpp-checker {} \\;
                 '''
             }
         }
@@ -221,7 +221,7 @@ Add to `.vscode/tasks.json`:
         {
             "label": "Borrow Check Current File",
             "type": "shell",
-            "command": "cpp-borrow-checker",
+            "command": "rusty-cpp-checker",
             "args": ["${file}"],
             "group": {
                 "kind": "test",
@@ -232,7 +232,7 @@ Add to `.vscode/tasks.json`:
                 "panel": "new"
             },
             "problemMatcher": {
-                "owner": "cpp-borrow-checker",
+                "owner": "rusty-cpp-checker",
                 "fileLocation": ["relative", "${workspaceFolder}"],
                 "pattern": {
                     "regexp": "^(.*):(\\d+):(\\d+):\\s+(.*)$",
@@ -284,7 +284,7 @@ Create `.borrow-checker.json` in your project root:
 **Solution**: Set include paths explicitly:
 ```bash
 export CPLUS_INCLUDE_PATH=/usr/include/c++/11:/usr/include
-cpp-borrow-checker file.cpp
+rusty-cpp-checker file.cpp
 ```
 
 ### Issue: Build fails with borrow check errors
@@ -311,4 +311,4 @@ void legacy_function() {
 - See `examples/cmake_project/` for a complete CMake example
 - Read `CLAUDE.md` for technical details
 - Check `README.md` for usage instructions
-- File issues at: https://github.com/yourusername/cpp-borrow-checker/issues
+- File issues at: https://github.com/yourusername/rusty-cpp-checker/issues

@@ -1,6 +1,6 @@
-# CppBorrowChecker.cmake - CMake integration for C++ Borrow Checker
+# CppBorrowChecker.cmake - CMake integration for Rusty C++ Checker
 #
-# This module provides functions to integrate the C++ Borrow Checker into your CMake build.
+# This module provides functions to integrate the Rusty C++ Checker into your CMake build.
 #
 # Usage:
 #   include(CppBorrowChecker.cmake)
@@ -16,18 +16,18 @@
 
 # Find the borrow checker executable
 find_program(CPP_BORROW_CHECKER
-    NAMES cpp-borrow-checker
+    NAMES rusty-cpp-checker cpp-borrow-checker
     PATHS 
         ${CMAKE_CURRENT_LIST_DIR}/../target/release
         ${CMAKE_CURRENT_LIST_DIR}/../target/debug
         $ENV{HOME}/.cargo/bin
         /usr/local/bin
         /usr/bin
-    DOC "Path to the C++ Borrow Checker executable"
+    DOC "Path to the Rusty C++ Checker executable"
 )
 
 if(NOT CPP_BORROW_CHECKER)
-    message(WARNING "C++ Borrow Checker not found. Please build and install it first.")
+    message(WARNING "Rusty C++ Checker not found. Please build and install it first.")
     message(STATUS "To install: cd ${CMAKE_CURRENT_LIST_DIR}/.. && cargo build --release")
 endif()
 
@@ -142,7 +142,7 @@ endfunction()
 # Function to enable borrow checking globally
 function(enable_borrow_checking)
     if(NOT CPP_BORROW_CHECKER)
-        message(WARNING "Cannot enable borrow checking: cpp-borrow-checker not found")
+        message(WARNING "Cannot enable borrow checking: rusty-cpp-checker not found")
         return()
     endif()
     

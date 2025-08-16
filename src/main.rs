@@ -12,10 +12,10 @@ mod solver;
 mod diagnostics;
 
 #[derive(clap::Parser, Debug)]
-#[command(name = "cpp-borrow-checker")]
+#[command(name = "rusty-cpp-checker")]
 #[command(about = "A static analyzer that enforces Rust-like borrow checking rules for C++")]
 #[command(version)]
-#[command(long_about = "A static analyzer that enforces Rust-like borrow checking rules for C++\n\n\
+#[command(long_about = "Rusty C++ Checker - A static analyzer that enforces Rust-like borrow checking rules for C++\n\n\
 Environment variables:\n  \
 CPLUS_INCLUDE_PATH  : Colon-separated list of C++ include directories\n  \
 C_INCLUDE_PATH      : Colon-separated list of C include directories\n  \
@@ -46,7 +46,7 @@ struct Args {
 fn main() {
     let args = Args::parse();
     
-    println!("{}", "C++ Borrow Checker".bold().blue());
+    println!("{}", "Rusty C++ Checker".bold().blue());
     println!("Analyzing: {}", args.input.display());
     
     match analyze_file(&args.input, &args.include_paths, args.compile_commands.as_ref()) {

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# C++ Borrow Checker Installation Script
-# This script builds and installs the borrow checker for use with CMake and other build systems
+# Rusty C++ Checker Installation Script
+# This script builds and installs the Rusty C++ Checker for use with CMake and other build systems
 
 set -e  # Exit on error
 
@@ -9,8 +9,8 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 INSTALL_PREFIX="${INSTALL_PREFIX:-/usr/local}"
 BUILD_TYPE="${BUILD_TYPE:-release}"
 
-echo "C++ Borrow Checker Installation"
-echo "================================"
+echo "Rusty C++ Checker Installation"
+echo "=============================="
 echo "Install prefix: $INSTALL_PREFIX"
 echo "Build type: $BUILD_TYPE"
 echo
@@ -71,15 +71,15 @@ esac
 
 # Build the project
 echo
-echo "Building C++ Borrow Checker..."
+echo "Building Rusty C++ Checker..."
 cd "$SCRIPT_DIR"
 
 if [ "$BUILD_TYPE" = "release" ]; then
     cargo build --release
-    BINARY_PATH="target/release/cpp-borrow-checker"
+    BINARY_PATH="target/release/rusty-cpp-checker"
 else
     cargo build
-    BINARY_PATH="target/debug/cpp-borrow-checker"
+    BINARY_PATH="target/debug/rusty-cpp-checker"
 fi
 
 if [ ! -f "$BINARY_PATH" ]; then
@@ -115,9 +115,9 @@ fi
 # Verify installation
 echo
 echo "Verifying installation..."
-if command -v cpp-borrow-checker &> /dev/null; then
+if command -v rusty-cpp-checker &> /dev/null; then
     echo "✓ Binary installed successfully"
-    echo "  Version: $(cpp-borrow-checker --version 2>&1 || echo 'version info not available')"
+    echo "  Version: $(rusty-cpp-checker --version 2>&1 || echo 'version info not available')"
 else
     echo "✗ Binary not found in PATH"
     echo "  Make sure $INSTALL_PREFIX/bin is in your PATH"
@@ -142,10 +142,10 @@ echo "  2. Or for specific targets:"
 echo "     add_borrow_check_target(your_target)"
 echo
 echo "To use standalone:"
-echo "  cpp-borrow-checker your_file.cpp"
+echo "  rusty-cpp-checker your_file.cpp"
 echo
 echo "To uninstall:"
-echo "  rm $INSTALL_PREFIX/bin/cpp-borrow-checker"
+echo "  rm $INSTALL_PREFIX/bin/rusty-cpp-checker"
 echo "  rm $CMAKE_MODULE_DIR/CppBorrowChecker.cmake"
 echo
 echo "For more information, see: $SCRIPT_DIR/README.md"

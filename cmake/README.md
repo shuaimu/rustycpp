@@ -1,6 +1,6 @@
-# CMake Integration for C++ Borrow Checker
+# CMake Integration for Rusty C++ Checker
 
-This directory contains CMake modules for integrating the C++ Borrow Checker into your CMake-based projects.
+This directory contains CMake modules for integrating the Rusty C++ Checker into your CMake-based projects.
 
 ## Quick Start
 
@@ -126,7 +126,7 @@ enable_testing()
 
 # Add borrow checking as a test
 add_test(NAME borrow_check
-    COMMAND cpp-borrow-checker 
+    COMMAND rusty-cpp-checker 
             ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp
 )
 ```
@@ -199,7 +199,7 @@ If CMake can't find the borrow checker:
 
 ```cmake
 # Explicitly set the path
-set(CPP_BORROW_CHECKER "/path/to/cpp-borrow-checker")
+set(CPP_BORROW_CHECKER "/path/to/rusty-cpp-checker")
 include(CppBorrowChecker)
 ```
 
@@ -256,8 +256,8 @@ my_project/
 ```yaml
 - name: Install Borrow Checker
   run: |
-    git clone https://github.com/yourusername/cpp-borrow-checker
-    cd cpp-borrow-checker
+    git clone https://github.com/yourusername/rusty-cpp-checker
+    cd rusty-cpp-checker
     ./install.sh
 
 - name: Run Borrow Checks
@@ -280,4 +280,4 @@ stage('Borrow Check') {
 
 ## License
 
-Same as the C++ Borrow Checker project.
+Same as the Rusty C++ Checker project.

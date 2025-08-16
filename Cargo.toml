@@ -1,7 +1,11 @@
 [package]
-name = "cpp-borrow-checker"
+name = "rusty-cpp-checker"
 version = "0.1.0"
 edition = "2021"
+
+[[bin]]
+name = "rusty-cpp-checker"
+path = "src/main.rs"
 
 [dependencies]
 clang = "2.0.0"
