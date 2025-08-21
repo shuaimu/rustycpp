@@ -3,15 +3,16 @@
 
 #include <utility>
 #include <stdexcept>
-#include <variant>
+#include <new>
+#include <type_traits>
 
 // Result<T, E> - Represents either success (Ok) or failure (Err)
 // Equivalent to Rust's Result<T, E>
 //
 // Guarantees:
 // - Explicit error handling
-// - No exceptions unless explicitly unwrapped
-// - Type-safe error propagation
+// - No hidden exceptions
+// - Composable error propagation
 
 // @safe
 namespace rusty {
@@ -19,14 +20,35 @@ namespace rusty {
 template<typename T, typename E>
 class Result {
 private:
-    std::variant<T, E> data;
+    // Use aligned storage for union-like behavior (C++11 compatible)
+    union Storage {
+        typename std::aligned_storage<sizeof(T), alignof(T)>::type ok_storage;
+        typename std::aligned_storage<sizeof(E), alignof(E)>::type err_storage;
+        
+        Storage() {}
+        ~Storage() {}
+    } storage;
+    
     bool is_ok_value;
+    
+    T& ok_ref() { return *reinterpret_cast<T*>(&storage.ok_storage); }
+    const T& ok_ref() const { return *reinterpret_cast<const T*>(&storage.ok_storage); }
+    E& err_ref() { return *reinterpret_cast<E*>(&storage.err_storage); }
+    const E& err_ref() const { return *reinterpret_cast<const E*>(&storage.err_storage); }
+    
+    void destroy() {
+        if (is_ok_value) {
+            ok_ref().~T();
+        } else {
+            err_ref().~E();
+        }
+    }
     
 public:
     // Constructors for Ok variant
     static Result Ok(T value) {
         Result r;
-        r.data = std::move(value);
+        new (&r.storage.ok_storage) T(std::move(value));
         r.is_ok_value = true;
         return r;
     }
@@ -34,27 +56,44 @@ public:
     // Constructors for Err variant
     static Result Err(E error) {
         Result r;
-        r.data = std::move(error);
+        new (&r.storage.err_storage) E(std::move(error));
         r.is_ok_value = false;
         return r;
     }
     
-    // Default constructor (private, use Ok/Err factories)
-    Result() : is_ok_value(false) {}
+    // Default constructor (creates Err with default E)
+    Result() : is_ok_value(false) {
+        new (&storage.err_storage) E();
+    }
     
     // Copy constructor
-    Result(const Result& other) 
-        : data(other.data), is_ok_value(other.is_ok_value) {}
+    Result(const Result& other) : is_ok_value(other.is_ok_value) {
+        if (is_ok_value) {
+            new (&storage.ok_storage) T(other.ok_ref());
+        } else {
+            new (&storage.err_storage) E(other.err_ref());
+        }
+    }
     
     // Move constructor
-    Result(Result&& other) noexcept 
-        : data(std::move(other.data)), is_ok_value(other.is_ok_value) {}
+    Result(Result&& other) noexcept : is_ok_value(other.is_ok_value) {
+        if (is_ok_value) {
+            new (&storage.ok_storage) T(std::move(other.ok_ref()));
+        } else {
+            new (&storage.err_storage) E(std::move(other.err_ref()));
+        }
+    }
     
     // Copy assignment
     Result& operator=(const Result& other) {
         if (this != &other) {
-            data = other.data;
+            destroy();
             is_ok_value = other.is_ok_value;
+            if (is_ok_value) {
+                new (&storage.ok_storage) T(other.ok_ref());
+            } else {
+                new (&storage.err_storage) E(other.err_ref());
+            }
         }
         return *this;
     }
@@ -62,150 +101,191 @@ public:
     // Move assignment
     Result& operator=(Result&& other) noexcept {
         if (this != &other) {
-            data = std::move(other.data);
+            destroy();
             is_ok_value = other.is_ok_value;
+            if (is_ok_value) {
+                new (&storage.ok_storage) T(std::move(other.ok_ref()));
+            } else {
+                new (&storage.err_storage) E(std::move(other.err_ref()));
+            }
         }
         return *this;
     }
     
+    // Destructor
+    ~Result() {
+        destroy();
+    }
+    
     // Check if Result is Ok
     bool is_ok() const { return is_ok_value; }
+    
+    // Check if Result is Err
     bool is_err() const { return !is_ok_value; }
     
-    // Explicit bool conversion (true if Ok)
-    explicit operator bool() const { return is_ok_value; }
-    
-    // Unwrap the Ok value (panics if Err)
-    // @lifetime: owned
+    // Unwrap Ok value (panics if Err)
     T unwrap() {
         if (!is_ok_value) {
-            throw std::runtime_error("Called unwrap on Err");
+            throw std::runtime_error("Called unwrap on an Err value");
         }
-        return std::move(std::get<T>(data));
+        return std::move(ok_ref());
     }
     
-    // Unwrap the Err value (panics if Ok)
-    // @lifetime: owned
+    // Unwrap Err value (panics if Ok)
     E unwrap_err() {
         if (is_ok_value) {
-            throw std::runtime_error("Called unwrap_err on Ok");
+            throw std::runtime_error("Called unwrap_err on an Ok value");
         }
-        return std::move(std::get<E>(data));
+        return std::move(err_ref());
     }
     
-    // Unwrap with default value
-    // @lifetime: owned
+    // Unwrap Ok value or return default
     T unwrap_or(T default_value) {
         if (is_ok_value) {
-            return unwrap();
+            return std::move(ok_ref());
         }
-        return default_value;
+        return std::move(default_value);
     }
     
-    // Get reference to Ok value (panics if Err)
-    // @lifetime: (&'a) -> &'a
-    T& unwrap_ref() {
-        if (!is_ok_value) {
-            throw std::runtime_error("Called unwrap_ref on Err");
-        }
-        return std::get<T>(data);
-    }
-    
-    // @lifetime: (&'a) -> &'a
-    const T& unwrap_ref() const {
-        if (!is_ok_value) {
-            throw std::runtime_error("Called unwrap_ref on Err");
-        }
-        return std::get<T>(data);
-    }
-    
-    // Get reference to Err value (panics if Ok)
-    // @lifetime: (&'a) -> &'a
-    E& unwrap_err_ref() {
-        if (is_ok_value) {
-            throw std::runtime_error("Called unwrap_err_ref on Ok");
-        }
-        return std::get<E>(data);
-    }
-    
-    // @lifetime: (&'a) -> &'a
-    const E& unwrap_err_ref() const {
-        if (is_ok_value) {
-            throw std::runtime_error("Called unwrap_err_ref on Ok");
-        }
-        return std::get<E>(data);
-    }
-    
-    // Map function over Ok value
+    // Map over Ok value
     template<typename F>
-    // @lifetime: owned
-    auto map(F&& f) -> Result<decltype(f(std::declval<T>())), E> {
-        using U = decltype(f(std::declval<T>()));
+    auto map(F f) -> Result<decltype(f(std::declval<T>())), E> {
+        using NewT = decltype(f(std::declval<T>()));
         if (is_ok_value) {
-            return Result<U, E>::Ok(f(std::get<T>(std::move(data))));
+            return Result<NewT, E>::Ok(f(ok_ref()));
+        } else {
+            return Result<NewT, E>::Err(err_ref());
         }
-        return Result<U, E>::Err(std::get<E>(std::move(data)));
     }
     
-    // Map function over Err value
+    // Map over Err value
     template<typename F>
-    // @lifetime: owned
-    auto map_err(F&& f) -> Result<T, decltype(f(std::declval<E>()))> {
-        using U = decltype(f(std::declval<E>()));
-        if (!is_ok_value) {
-            return Result<T, U>::Err(f(std::get<E>(std::move(data))));
+    auto map_err(F f) -> Result<T, decltype(f(std::declval<E>()))> {
+        using NewE = decltype(f(std::declval<E>()));
+        if (is_ok_value) {
+            return Result<T, NewE>::Ok(ok_ref());
+        } else {
+            return Result<T, NewE>::Err(f(err_ref()));
         }
-        return Result<T, U>::Ok(std::get<T>(std::move(data)));
     }
     
-    // Chain Results (monadic bind)
+    // Chain operations that return Result
     template<typename F>
-    // @lifetime: owned
-    auto and_then(F&& f) -> decltype(f(std::declval<T>())) {
-        using ResultType = decltype(f(std::declval<T>()));
+    auto and_then(F f) -> decltype(f(std::declval<T>())) {
+        using ReturnType = decltype(f(std::declval<T>()));
         if (is_ok_value) {
-            return f(std::get<T>(std::move(data)));
+            return f(ok_ref());
+        } else {
+            return ReturnType::Err(err_ref());
         }
-        return ResultType::Err(std::get<E>(std::move(data)));
     }
     
-    // Get Ok value or execute function
+    // Provide alternative Result if this is Err
     template<typename F>
-    // @lifetime: owned
-    T unwrap_or_else(F&& f) {
+    Result or_else(F f) {
         if (is_ok_value) {
-            return std::get<T>(std::move(data));
+            return *this;
+        } else {
+            return f(err_ref());
         }
-        return f(std::get<E>(std::move(data)));
+    }
+    
+    // Explicit bool conversion - true if Ok
+    explicit operator bool() const {
+        return is_ok_value;
     }
 };
 
-// Helper functions for creating Results
+// Specialization for Result<void, E>
+template<typename E>
+class Result<void, E> {
+private:
+    union Storage {
+        typename std::aligned_storage<sizeof(E), alignof(E)>::type err_storage;
+        
+        Storage() {}
+        ~Storage() {}
+    } storage;
+    
+    bool is_ok_value;
+    
+    E& err_ref() { return *reinterpret_cast<E*>(&storage.err_storage); }
+    const E& err_ref() const { return *reinterpret_cast<const E*>(&storage.err_storage); }
+    
+    void destroy() {
+        if (!is_ok_value) {
+            err_ref().~E();
+        }
+    }
+    
+public:
+    // Constructor for Ok variant
+    static Result Ok() {
+        Result r;
+        r.is_ok_value = true;
+        return r;
+    }
+    
+    // Constructor for Err variant
+    static Result Err(E error) {
+        Result r;
+        new (&r.storage.err_storage) E(std::move(error));
+        r.is_ok_value = false;
+        return r;
+    }
+    
+    // Default constructor (creates Ok)
+    Result() : is_ok_value(true) {}
+    
+    // Copy constructor
+    Result(const Result& other) : is_ok_value(other.is_ok_value) {
+        if (!is_ok_value) {
+            new (&storage.err_storage) E(other.err_ref());
+        }
+    }
+    
+    // Move constructor
+    Result(Result&& other) noexcept : is_ok_value(other.is_ok_value) {
+        if (!is_ok_value) {
+            new (&storage.err_storage) E(std::move(other.err_ref()));
+        }
+    }
+    
+    // Destructor
+    ~Result() {
+        destroy();
+    }
+    
+    // Check if Result is Ok
+    bool is_ok() const { return is_ok_value; }
+    
+    // Check if Result is Err
+    bool is_err() const { return !is_ok_value; }
+    
+    // Unwrap Err value (panics if Ok)
+    E unwrap_err() {
+        if (is_ok_value) {
+            throw std::runtime_error("Called unwrap_err on an Ok value");
+        }
+        return std::move(err_ref());
+    }
+    
+    // Explicit bool conversion - true if Ok
+    explicit operator bool() const {
+        return is_ok_value;
+    }
+};
+
+// Helper function to create Ok Result
 template<typename T, typename E>
-// @lifetime: owned
 Result<T, E> Ok(T value) {
     return Result<T, E>::Ok(std::move(value));
 }
 
+// Helper function to create Err Result
 template<typename T, typename E>
-// @lifetime: owned
 Result<T, E> Err(E error) {
     return Result<T, E>::Err(std::move(error));
-}
-
-// Equality operators
-template<typename T, typename E>
-bool operator==(const Result<T, E>& lhs, const Result<T, E>& rhs) {
-    if (lhs.is_ok() != rhs.is_ok()) return false;
-    if (lhs.is_ok()) {
-        return lhs.unwrap_ref() == rhs.unwrap_ref();
-    }
-    return lhs.unwrap_err_ref() == rhs.unwrap_err_ref();
-}
-
-template<typename T, typename E>
-bool operator!=(const Result<T, E>& lhs, const Result<T, E>& rhs) {
-    return !(lhs == rhs);
 }
 
 } // namespace rusty

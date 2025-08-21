@@ -17,7 +17,11 @@ namespace rusty {
 
 // Tag types for Option variants
 struct None_t {};
+#if __cplusplus >= 201703L
 inline constexpr None_t None{};
+#else
+static const None_t None{};
+#endif
 
 template<typename T>
 class Option {

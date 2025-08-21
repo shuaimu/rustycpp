@@ -1,6 +1,8 @@
 #ifndef RUSTY_BOX_HPP
 #define RUSTY_BOX_HPP
 
+#include <utility>  // for std::move, std::forward
+
 // Box<T> - A smart pointer for heap-allocated values with single ownership
 // Equivalent to Rust's Box<T>
 //

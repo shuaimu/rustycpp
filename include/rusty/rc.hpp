@@ -2,6 +2,8 @@
 #define RUSTY_RC_HPP
 
 #include <cassert>
+#include <utility>  // for std::move, std::forward
+#include <cstddef>  // for size_t
 
 // Rc<T> - Reference Counted pointer (non-atomic)
 // Equivalent to Rust's Rc<T>
@@ -17,9 +19,15 @@
 // @safe
 namespace rusty {
 
+// Forward declaration for friend
+template<typename T>
+class Weak;
+
 template<typename T>
 class Rc {
 private:
+    friend class Weak<T>;
+    
     struct ControlBlock {
         T value;
         size_t ref_count;
@@ -191,7 +199,10 @@ public:
     // @lifetime: owned
     Rc<T> upgrade() const {
         if (ptr && ptr->ref_count > 0) {
-            return Rc<T>(ptr);
+            Rc<T> result;
+            result.ptr = ptr;
+            result.increment();
+            return result;
         }
         return Rc<T>();
     }

@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <initializer_list>
 #include <cassert>
+#include <utility>  // for std::move, std::forward
+#include <cstddef>  // for size_t
+#include <cstring>  // for memcpy
 
 // Vec<T> - A growable array with owned elements
 // Equivalent to Rust's Vec<T>

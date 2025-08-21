@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <utility>  // for std::move, std::forward
 
 // Arc<T> - Atomically Reference Counted pointer
 // Equivalent to Rust's Arc<T>
