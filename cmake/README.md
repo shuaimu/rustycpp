@@ -1,10 +1,17 @@
 # CMake Integration for Rusty C++ Checker
 
-This directory contains CMake modules for integrating the Rusty C++ Checker into your CMake-based projects.
+This directory contains CMake modules for integrating the Rusty C++ Checker into your CMake-based projects. We provide two integration methods:
 
-## Quick Start
+1. **Global Installation** (`CppBorrowChecker.cmake`) - Traditional approach with system-wide installation
+2. **Submodule Integration** (`RustyCppSubmodule.cmake`) - Self-contained approach without global installation
 
-### Installation
+## Integration Methods
+
+### Method 1: Global Installation
+
+Use this when you want to install the checker system-wide and use it across multiple projects.
+
+#### Installation
 
 ```bash
 # From the project root
@@ -16,7 +23,7 @@ This will:
 - Install it to `/usr/local/bin` (or `$INSTALL_PREFIX/bin`)
 - Install the CMake module to `/usr/local/share/cmake/Modules`
 
-### Basic Usage
+#### Usage
 
 In your `CMakeLists.txt`:
 
@@ -33,56 +40,52 @@ add_executable(my_app main.cpp)
 # The borrow checker will run automatically during build
 ```
 
-## Integration Options
+### Method 2: Git Submodule Integration (Recommended)
 
-### 1. Global Checking (Check Everything)
+Use this for self-contained projects where the checker is part of your repository. No global installation required!
+
+#### Setup
+
+```bash
+# In your project root
+git submodule add https://github.com/shuaimu/rustycpp external/rustycpp
+git submodule update --init --recursive
+```
+
+#### Usage
+
+In your `CMakeLists.txt`:
 
 ```cmake
-include(CppBorrowChecker)
+# Include the submodule integration
+include(${CMAKE_CURRENT_SOURCE_DIR}/external/rustycpp/cmake/RustyCppSubmodule.cmake)
+
+# Configure and enable
+set(RUSTYCPP_BUILD_TYPE "release")  # or "debug"
 enable_borrow_checking()
 
-# All C++ files in all targets will be checked
-add_executable(app main.cpp utils.cpp)
-add_library(lib src1.cpp src2.cpp)
-```
-
-### 2. Per-Target Checking (Recommended)
-
-```cmake
-include(CppBorrowChecker)
-set(ENABLE_BORROW_CHECKING ON)
-
-add_executable(my_app main.cpp utils.cpp)
-
-# Only check this specific target
+# Add your targets
+add_executable(my_app main.cpp)
 add_borrow_check_target(my_app)
+
+# The checker will be built automatically as part of your project
 ```
 
-### 3. Per-File Checking (Most Granular)
+## Choosing Between Methods
 
-```cmake
-include(CppBorrowChecker)
-set(ENABLE_BORROW_CHECKING ON)
+| Aspect | Global Installation | Submodule Integration |
+|--------|--------------------|-----------------------|
+| **Installation** | Once per system | None (automatic) |
+| **Version Control** | System-wide version | Per-project version |
+| **CI/CD** | Requires pre-installation | Self-contained |
+| **Team Setup** | Each member installs | Automatic via git |
+| **Build Time** | Faster (pre-built) | Slower first build |
+| **Reproducibility** | Depends on system | Fully reproducible |
+| **Best For** | Personal development | Team projects |
 
-# Check specific files only
-add_borrow_check(src/critical.cpp)
-add_borrow_check(src/memory_sensitive.cpp)
-# src/legacy.cpp is not checked
-```
+## Common Configuration Options
 
-### 4. With compile_commands.json
-
-```cmake
-# Enable compile_commands.json generation
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-setup_borrow_checker_compile_commands()
-
-# This provides better include path handling
-```
-
-## Configuration Options
-
-### CMake Variables
+Both methods support the same configuration options:
 
 ```cmake
 # Enable/disable checking (default: OFF)
@@ -98,52 +101,33 @@ set(BORROW_CHECKER_INCLUDE_PATHS
 )
 ```
 
-### Environment Variables
+## Checking Strategies
 
-The checker respects standard C++ include path environment variables:
-- `CPLUS_INCLUDE_PATH` - C++ include directories
-- `C_INCLUDE_PATH` - C include directories
-- `CPATH` - Both C and C++ includes
-
-## Advanced Usage
-
-### Custom Check Target
+### 1. Check Everything
 
 ```cmake
-# Create a target that checks all files
-add_custom_target(check_all
-    COMMAND cpp-borrow-checker 
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
-            -I${CMAKE_CURRENT_SOURCE_DIR}/include
-    COMMENT "Running borrow checker on all files"
-)
+enable_borrow_checking()
+# All targets will be checked automatically
 ```
 
-### Integration with CTest
+### 2. Check Specific Targets
 
 ```cmake
-enable_testing()
+set(ENABLE_BORROW_CHECKING ON)
 
-# Add borrow checking as a test
-add_test(NAME borrow_check
-    COMMAND rusty-cpp-checker 
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp
-)
+add_executable(my_app main.cpp utils.cpp)
+add_borrow_check_target(my_app)  # Only check this target
 ```
 
-### Conditional Checking
+### 3. Check Specific Files
 
 ```cmake
-# Only enable in Debug builds
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    enable_borrow_checking()
-endif()
+set(ENABLE_BORROW_CHECKING ON)
 
-# Or as an option
-option(ENABLE_SAFETY_CHECKS "Enable borrow checking" OFF)
-if(ENABLE_SAFETY_CHECKS)
-    enable_borrow_checking()
-endif()
+# Check only critical files
+add_borrow_check(src/critical.cpp)
+add_borrow_check(src/memory_sensitive.cpp)
+# src/legacy.cpp is not checked
 ```
 
 ## Gradual Adoption Strategy
@@ -191,11 +175,129 @@ enable_borrow_checking()
 set(BORROW_CHECK_FATAL ON)  # Make it enforced
 ```
 
+## Advanced Usage
+
+### With compile_commands.json
+
+Both methods support using compile_commands.json for better include path handling:
+
+```cmake
+# Enable compile_commands.json generation
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+setup_borrow_checker_compile_commands()
+```
+
+### Custom Check Target
+
+```cmake
+# Create a target that checks all files
+add_custom_target(check_all
+    COMMAND ${CPP_BORROW_CHECKER}
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
+            -I${CMAKE_CURRENT_SOURCE_DIR}/include
+    COMMENT "Running borrow checker on all files"
+)
+```
+
+### Integration with CTest
+
+```cmake
+enable_testing()
+
+# Add borrow checking as a test
+add_test(NAME borrow_check
+    COMMAND ${CPP_BORROW_CHECKER}
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp
+)
+```
+
+### Conditional Checking
+
+```cmake
+# Only enable in Debug builds
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    enable_borrow_checking()
+endif()
+
+# Or as an option
+option(ENABLE_SAFETY_CHECKS "Enable borrow checking" OFF)
+if(ENABLE_SAFETY_CHECKS)
+    enable_borrow_checking()
+endif()
+```
+
+## Example Project Structures
+
+### With Global Installation
+
+```
+my_project/
+├── CMakeLists.txt          # Includes CppBorrowChecker
+├── include/
+│   └── my_lib.h
+├── src/
+│   ├── main.cpp           # @safe functions
+│   └── utils.cpp
+└── build/
+```
+
+### With Submodule
+
+```
+my_project/
+├── CMakeLists.txt          # Includes RustyCppSubmodule
+├── external/
+│   └── rustycpp/           # Git submodule
+│       ├── src/
+│       ├── cmake/
+│       └── Cargo.toml
+├── include/
+│   └── my_lib.h
+├── src/
+│   ├── main.cpp
+│   └── utils.cpp
+└── build/
+```
+
+## CI/CD Integration
+
+### GitHub Actions with Submodule
+
+```yaml
+- name: Checkout with submodules
+  uses: actions/checkout@v2
+  with:
+    submodules: recursive
+
+- name: Install Rust
+  uses: actions-rs/toolchain@v1
+  with:
+    toolchain: stable
+
+- name: Configure and Build
+  run: |
+    cmake -B build -DENABLE_BORROW_CHECKING=ON
+    cmake --build build
+```
+
+### GitHub Actions with Global Installation
+
+```yaml
+- name: Install Borrow Checker
+  run: |
+    git clone https://github.com/shuaimu/rustycpp
+    cd rustycpp
+    ./install.sh
+
+- name: Configure and Build
+  run: |
+    cmake -B build -DENABLE_BORROW_CHECKING=ON
+    cmake --build build
+```
+
 ## Troubleshooting
 
-### Checker Not Found
-
-If CMake can't find the borrow checker:
+### Checker Not Found (Global Installation)
 
 ```cmake
 # Explicitly set the path
@@ -203,81 +305,73 @@ set(CPP_BORROW_CHECKER "/path/to/rusty-cpp-checker")
 include(CppBorrowChecker)
 ```
 
-### Include Path Issues
+### Slow First Build (Submodule)
 
-If the checker can't find headers:
+The first build compiles the Rust checker. Use `debug` mode for faster builds during development:
 
 ```cmake
-# Add include paths explicitly
+set(RUSTYCPP_BUILD_TYPE "debug")
+```
+
+### Include Path Issues
+
+Both methods support explicit include paths:
+
+```cmake
 set(BORROW_CHECKER_INCLUDE_PATHS
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
-    /usr/include/c++/11  # System includes
+    /usr/include/c++/11
 )
 ```
 
-### Performance
+### Submodule Out of Date
 
-For large projects, consider:
+```bash
+cd external/rustycpp
+git pull origin main
+cd ../..
+git add external/rustycpp
+git commit -m "Update rustycpp submodule"
+```
+
+## Environment Variables
+
+The checker respects standard C++ include path environment variables:
+- `CPLUS_INCLUDE_PATH` - C++ include directories
+- `C_INCLUDE_PATH` - C include directories
+- `CPATH` - Both C and C++ includes
+
+## Performance Tips
+
+### Parallel Checking
 
 ```cmake
 # Run checks in parallel
 set(CMAKE_JOB_POOLS check_pool=4)
 set_property(GLOBAL PROPERTY JOB_POOLS check_pool=4)
+```
 
-# Only check changed files (with ccache)
+### Caching (with ccache)
+
+```cmake
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
     set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
 endif()
 ```
 
-## Example Project Structure
+## Module Files
 
-```
-my_project/
-├── CMakeLists.txt          # Main CMake file
-├── cmake/
-│   └── CppBorrowChecker.cmake  # Copy or symlink
-├── include/
-│   └── my_lib.h           # Headers with lifetime annotations
-├── src/
-│   ├── main.cpp           # @safe functions
-│   ├── safe_module.cpp    # Fully checked
-│   └── legacy.cpp         # Unchecked legacy code
-└── build/
-    └── compile_commands.json  # Generated by CMake
-```
+- **`CppBorrowChecker.cmake`** - Global installation integration
+- **`RustyCppSubmodule.cmake`** - Submodule integration (no installation required)
 
-## CI/CD Integration
+## Further Documentation
 
-### GitHub Actions
-
-```yaml
-- name: Install Borrow Checker
-  run: |
-    git clone https://github.com/yourusername/rusty-cpp-checker
-    cd rusty-cpp-checker
-    ./install.sh
-
-- name: Run Borrow Checks
-  run: |
-    mkdir build && cd build
-    cmake .. -DENABLE_BORROW_CHECKING=ON
-    make borrow_check_all
-```
-
-### Jenkins
-
-```groovy
-stage('Borrow Check') {
-    steps {
-        sh 'cmake -DENABLE_BORROW_CHECKING=ON ..'
-        sh 'make -j4'  // Will run checks during build
-    }
-}
-```
+- [Submodule Integration Guide](../docs/SUBMODULE_INTEGRATION.md) - Detailed submodule setup
+- [Main Project README](../README.md) - Project overview and features
+- [Examples](../examples/) - Sample projects using both integration methods
 
 ## License
 
-Same as the Rusty C++ Checker project.
+Same as the Rusty C++ Checker project (MIT).
