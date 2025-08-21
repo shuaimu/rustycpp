@@ -1,21 +1,81 @@
-# Rusty C++ Checker
+# RustyCpp: Making C++ Rusty
 
-A standalone static analyzer that enforces Rust-like ownership and borrowing rules for C++ code, bringing memory safety guarantees to existing C++ codebases without runtime overhead.
+This project aims to make C++ safer and more reliable by adopting Rust's proven safety principles, especially its borrow-checking system.  We provide a static analyzer that enforces Rust-like ownership and borrowing rules through compile-time analysis. 
+<!-- 2. **Style Guide** - Best practices and utilities for writing safer C++ code with Rust-like patterns -->
 
-## 🎯 Vision
+---
+
+## Borrow checking and lifetime analysis
+
+### 🎯 Vision
 
 This project aims to catch memory safety issues at compile-time by applying Rust's proven ownership model to C++ code. It helps prevent common bugs like use-after-move, double-free, and dangling references before they reach production.
 
-## ✨ Features
+Though C++ is flexible enough to mimic Rust's idioms in many ways, implementing a borrow-checking without modifying the compiler system appears to be impossible, as analyzed in [document](https://docs.google.com/document/d/e/2PACX-1vSt2VB1zQAJ6JDMaIA9PlmEgBxz2K5Tx6w2JqJNeYCy0gU4aoubdTxlENSKNSrQ2TXqPWcuwtXe6PlO/pub). 
 
-### Core Capabilities
-- **🔒 Ownership Tracking**: Ensures single ownership of resources with move semantics
+We provide rusty-cpp-checker, a standalone static analyzer that enforces Rust-like ownership and borrowing rules for C++ code, bringing memory safety guarantees to existing C++ codebases without runtime overhead. rusty-cpp-checker does not bringing any new grammar into c++. Everything works through simple annoations such as adding `// @safe` enables safety checking on a function.
+
+Note: two projects that (attempt to) implement borrow checking in C++ at compile time are [Circle C++](https://www.circle-lang.org/site/index.html) and [Crubit](https://github.com/google/crubit). As of 2025, Circle is not open sourced, and its design introduces aggressive modifications, such as the ref pointer ^. Crubit is not yet usable on this feature.
+
+### Example
+
+Here's a simple demonstration of how const reference borrowing works:
+
+```cpp
+// @safe
+void demonstrate_const_ref_borrowing() {
+    int value = 42;
+    
+    // Multiple const references are allowed (immutable borrows)
+    const int& ref1 = value;  // First immutable borrow - OK
+    const int& ref2 = value;  // Second immutable borrow - OK  
+    const int& ref3 = value;  // Third immutable borrow - OK
+    
+    // All can be used simultaneously to read the value
+    int sum = ref1 + ref2 + ref3;  // OK - reading through const refs
+}
+
+// @safe
+void demonstrate_const_ref_violation() {
+    int value = 42;
+    
+    const int& const_ref = value;  // Immutable borrow - OK
+    int& mut_ref = value;          // ERROR: Cannot have mutable borrow when immutable exists
+    
+    // This would violate the guarantee that const_ref won't see unexpected changes
+    mut_ref = 100;  // If allowed, const_ref would suddenly see value 100
+}
+```
+
+**Analysis Output:**
+```
+error: cannot borrow `value` as mutable because it is also borrowed as immutable
+  --> example.cpp:6:5
+   |
+5  |     const int& const_ref = value;  // Immutable borrow - OK
+   |                            ----- immutable borrow occurs here
+6  |     int& mut_ref = value;          // ERROR
+   |          ^^^^^^^ mutable borrow occurs here
+```
+
+<!-- The next best alternative is runtime checking, similar to Rust's `RefCell` smart pointer. 
+This repository includes a C++ implementation of this concept (see `ref_cell.h`).
+Consider using it instead of `shared_ptr` when appropriate.
+
+A standalone static analyzer that enforces Rust-like ownership and borrowing rules for C++ code, bringing memory safety guarantees to existing C++ codebases without runtime overhead. -->
+
+
+
+### ✨ Features
+
+#### Core Capabilities
 - **🔄 Borrow Checking**: Enforces Rust's borrowing rules (multiple readers XOR single writer)
+- **🔒 Ownership Tracking**: Ensures single ownership of resources with move semantics
 - **⏳ Lifetime Analysis**: Validates that references don't outlive their data
-- **🎯 Smart Pointer Support**: Special handling for `std::unique_ptr`, `std::shared_ptr`, and `std::weak_ptr`
-- **🎨 Beautiful Diagnostics**: Clear, actionable error messages with source locations
+<!-- - **🎯 Smart Pointer Support**: Special handling for `std::unique_ptr`, `std::shared_ptr`, and `std::weak_ptr` -->
+<!-- - **🎨 Beautiful Diagnostics**: Clear, actionable error messages with source locations -->
 
-### Detected Issues
+#### Detected Issues
 - Use-after-move violations
 - Multiple mutable borrows
 - Dangling references
@@ -23,23 +83,23 @@ This project aims to catch memory safety issues at compile-time by applying Rust
 - RAII violations
 - Data races (through borrow checking)
 
-## 📦 Installation
+### 📦 Installation
 
-### Prerequisites
+#### Prerequisites
 
 - **Rust**: 1.70+ (for building the analyzer)
 - **LLVM/Clang**: 14+ (for parsing C++)
 - **Z3**: 4.8+ (for constraint solving)
 
-### macOS
+#### macOS
 
 ```bash
 # Install dependencies
 brew install llvm z3
 
 # Clone the repository
-git clone https://github.com/yourusername/rusty-cpp-checker
-cd rusty-cpp-checker
+git clone https://github.com/shuaimu/rustycpp
+cd rusty-cpp
 
 # Build the project
 cargo build --release
@@ -53,7 +113,7 @@ export PATH="$PATH:$(pwd)/target/release"
 
 **Note**: The project includes a `.cargo/config.toml` file that automatically sets the required environment variables for Z3. If you encounter build issues, you may need to adjust the paths in this file based on your system configuration.
 
-### Linux (Ubuntu/Debian)
+#### Linux (Ubuntu/Debian)
 
 ```bash
 # Install dependencies
@@ -61,12 +121,12 @@ sudo apt-get update
 sudo apt-get install llvm-14-dev libclang-14-dev libz3-dev
 
 # Clone and build
-git clone https://github.com/yourusername/rusty-cpp-checker
-cd rusty-cpp-checker
+git clone https://github.com/shuaimu/rustycpp
+cd rustycpp
 cargo build --release
 ```
 
-### Windows
+#### Windows
 
 ```bash
 # Install LLVM from https://releases.llvm.org/
@@ -79,9 +139,9 @@ set Z3_SYS_Z3_HEADER=C:\z3\include\z3.h
 cargo build --release
 ```
 
-## 🚀 Usage
+### 🚀 Usage
 
-### Basic Usage
+#### Basic Usage
 
 ```bash
 # Analyze a single file
@@ -94,7 +154,7 @@ rusty-cpp-checker -vv path/to/file.cpp
 rusty-cpp-checker --format json path/to/file.cpp
 ```
 
-### Standalone Binary (No Environment Variables Required)
+#### Standalone Binary (No Environment Variables Required)
 
 For release distributions, we provide a standalone binary that doesn't require setting environment variables:
 
@@ -112,7 +172,7 @@ cd dist/rusty-cpp-checker-*/
 
 See [RELEASE.md](RELEASE.md) for details on building and distributing standalone binaries.
 
-### Environment Setup (macOS)
+#### Environment Setup (macOS)
 
 For convenience, add these to your shell profile:
 
@@ -122,11 +182,11 @@ export Z3_SYS_Z3_HEADER=/opt/homebrew/opt/z3/include/z3.h
 export DYLD_LIBRARY_PATH=/opt/homebrew/opt/llvm/lib:$DYLD_LIBRARY_PATH
 ```
 
-## 🛡️ Safety Annotations
+### 🛡️ Safety Annotations
 
 The borrow checker uses a unified annotation system for gradual adoption in existing codebases:
 
-### Unified Rule
+#### Unified Rule
 `@safe` and `@unsafe` annotations attach to the **next** code element (namespace, function, or first statement).
 
 ```cpp
@@ -160,14 +220,14 @@ void mixed_safety() {
 }
 ```
 
-### Default Behavior
+#### Default Behavior
 - Files are **unsafe by default** (no checking) for backward compatibility
 - Use `@safe` to opt into borrow checking
 - Use `@unsafe` to explicitly disable checking
 
-## 📝 Examples
+### 📝 Examples
 
-### Example 1: Use After Move
+#### Example 1: Use After Move
 
 ```cpp
 #include <memory>
@@ -195,7 +255,7 @@ note: value moved here
    |                                  ^^^^^^^^^^^^^^
 ```
 
-### Example 2: Multiple Mutable Borrows
+#### Example 2: Multiple Mutable Borrows
 
 ```cpp
 void bad_borrow() {
@@ -205,7 +265,7 @@ void bad_borrow() {
 }
 ```
 
-### Example 3: Lifetime Violation
+#### Example 3: Lifetime Violation
 
 ```cpp
 int& dangling_reference() {
@@ -214,7 +274,7 @@ int& dangling_reference() {
 }
 ```
 
-## 🏗️ Architecture
+### 🏗️ Architecture
 
 ```
 ┌─────────────┐     ┌──────────┐     ┌────────┐
@@ -230,7 +290,7 @@ int& dangling_reference() {
                        (Z3)        (Ownership/Lifetime)
 ```
 
-### Components
+#### Components
 
 - **Parser** (`src/parser/`): Uses libclang to build C++ AST
 - **IR** (`src/ir/`): Ownership-aware intermediate representation
@@ -238,77 +298,72 @@ int& dangling_reference() {
 - **Solver** (`src/solver/`): Z3-based constraint solving for lifetimes
 - **Diagnostics** (`src/diagnostics/`): User-friendly error reporting
 
-## 🎯 Roadmap
+---
 
-### Phase 1: Foundation (Current)
-- [x] Basic project structure
-- [x] Clang integration
-- [x] Initial IR design
-- [x] Simple ownership tracking
-- [ ] Use-after-move detection
+## Tips in writing rusty c++
+Writing C++ that is easier to debug by adopting principles from Rust.
 
-### Phase 2: Core Features
-- [ ] Complete borrow checking
-- [ ] Lifetime inference
-- [ ] Smart pointer analysis
-- [ ] Template support
-- [ ] Multi-file analysis
+### Being Explicit
 
-### Phase 3: Production Ready
-- [ ] IDE integration (VSCode, CLion)
-- [ ] CI/CD integration
-- [ ] Performance optimization
-- [ ] Incremental analysis
-- [ ] Fix suggestions
+Explicitness is one of Rust's core philosophies. It helps prevent errors that arise from overlooking hidden or implicit code behaviors.
 
-### Phase 4: Advanced
-- [ ] Async/await support
-- [ ] Thread safety analysis
-- [ ] Custom annotations
-- [ ] Auto-fixing capabilities
+#### No computation in constructors/destructors
+Constructors should be limited to initializing member variables and establishing the object's memory layout—nothing more. For additional initialization steps, create a separate `Init()` function. When member variables require initialization, handle this in the `Init()` function rather than in the constructor.
 
-## 🤝 Contributing
+Similarly, if you need computation in a destructor (such as setting flags or stopping threads), implement a `Destroy()` function that must be explicitly called before destruction.
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+#### Composition over inheritance
+Avoid inheritance whenever possible.
 
-### Areas We Need Help
-- Implementing more C++ AST patterns
-- Improving error messages
-- Writing test cases
-- Documentation
-- IDE plugins
+When polymorphism is necessary, limit inheritance to a single layer: an abstract base class and its implementation class. The abstract class should contain no member variables, and all its member functions should be pure virtual (declared with `= 0`). The implementation class should be marked as `final` to prevent further inheritance.
 
-## 📚 Documentation
+#### Use move and disallow copy assignment/constructor
+Except for primitive types, prefer using `move` instead of copy operations. There are multiple ways to disallow copy constructors; our convention is to inherit from the `boost::noncopyable` class:
 
-- [Architecture Overview](docs/ARCHITECTURE.md)
-- [Borrow Checking Algorithm](docs/ALGORITHM.md)
-- [Contributing Guide](CONTRIBUTING.md)
-- [API Reference](docs/API.md)
+```cpp
+class X: private boost::noncopyable {};
+```
 
-## 🔬 Research Papers
+If copy from an object is necessary, implement move constructor and a `Clone` function:
+```cpp
+Object obj1 = move(obj2.Clone()); // move can be omitted because it is already a right value. 
+```
 
-This project is inspired by:
-- [Rust's Borrow Checker (Polonius)](https://github.com/rust-lang/polonius)
-- [Linear Types for Safe Manual Memory Management](https://www.microsoft.com/en-us/research/publication/linear-types-for-safe-manual-memory-management/)
-- [Region-Based Memory Management](https://www.cl.cam.ac.uk/techreports/UCAM-CL-TR-262.pdf)
+### Memory Safety, Pointers, and References
 
-## 📄 License
+#### No raw pointers
+Avoid using raw pointers except when required by system calls, in which case wrap them in a dedicated class.
 
-MIT License - see [LICENSE](LICENSE) for details
+<!-- #### Ownership model: unique_ptr and shared_ptr
 
-## 🙏 Acknowledgments
+Program with the ownership model, where each object is owned by another object or function throughout its lifetime.
 
-- Rust team for the ownership model inspiration
-- LLVM/Clang team for the excellent C++ parsing infrastructure
-- Z3 team for the powerful constraint solver
-- All contributors and early adopters
+To transfer ownership, wrap objects in `unique_ptr`.
 
-## 📞 Contact
+Avoid shared ownership whenever possible. While this can be challenging, it's achievable in most cases. If shared ownership is truly necessary, consider using `shared_ptr`, but be aware that it incurs a non-negligible performance cost due to atomic reference counting operations (similar to Rust's `Arc` rather than `Rc`).
+ -->
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/cpp-borrow-checker/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/cpp-borrow-checker/discussions)
-- **Email**: your.email@example.com
+#### Use POD types  
+Try to use [POD](https://en.cppreference.com/w/cpp/named_req/PODType) types if possible. POD means "plain old data". A class is POD if:  
+* No user-defined copy assignment
+* No virtual functions
+* No destructor 
+
+### Incrementally Migrate to Rust (C++/Rust Interop)
+Some languages (like D, Zig, and Swift) offer seamless integration with C++. This makes it easier to adopt these languages in existing C++ projects, as you can simply write new code in the chosen language and interact with existing C++ code without friction.
+
+Unfortunately, Rust does not support this level of integration (perhaps intentionally to avoid becoming a secondary option in the C++ ecosystem), as discussed [here](https://internals.rust-lang.org/t/true-c-interop-built-into-the-language/19175/5).
+Currently, the best approach for C++/Rust interoperability is through the cxx/autocxx crates.
+This interoperability is implemented as a semi-automated process based on C FFIs (Foreign Function Interfaces) that both C++ and Rust support.
+However, if your C++ code follows the guidelines in this document, particularly if all types are POD, the interoperability experience can approach the seamless integration offered by other languages (though this remains to be verified).
+
+<!-- ### TODO 
+
+* Investigate microsoft [proxy](https://github.com/microsoft/proxy). It looks like a promising approach to add polymorphism to POD types. But can it be integrated with cxx/autocxx?  
+* Investigate autocxx. It provides an interesting feature to implement a C++ subclass in Rust. Can it do the reverse (implement a Rust trait in C++)?
+* Multi threading? 
+* Make the RefCell implementation has the same memory layout and APIs as the Rust standard library. Then integrate it into autocxx. -->
 
 ---
 
-**⚠️ Note**: This is an experimental tool. While it can catch many issues, it should not be the only safety measure in production code. Always use in conjunction with other testing and verification methods.
+**⚠️ Note**: This is an experimental tool. Use it at your own discretion.  
