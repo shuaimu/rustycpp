@@ -87,16 +87,59 @@ pub fn parse_cpp_file_with_includes_and_defines(path: &Path, include_paths: &[st
     // Visit the AST
     let mut ast = CppAst::new();
     let root = tu.get_entity();
-    visit_entity(&root, &mut ast);
+    let mut visited_files = std::collections::HashSet::new();
+    visit_entity(&root, &mut ast, &mut visited_files);
     
     Ok(ast)
 }
 
-fn visit_entity(entity: &Entity, ast: &mut CppAst) {
-    // Only process entities from the main file, not included headers
+fn visit_entity(entity: &Entity, ast: &mut CppAst, visited_files: &mut std::collections::HashSet<String>) {
+    // Check location and filter files
     if let Some(location) = entity.get_location() {
-        if !location.is_in_main_file() {
-            return; // Skip entities from included files
+        if let Some(file) = location.get_file_location().file {
+            let path = file.get_path();
+            let path_str = path.to_string_lossy().to_string();
+            
+            // Skip system headers and standard library
+            if path_str.starts_with("/usr/include") || 
+               path_str.starts_with("/usr/lib") ||
+               path_str.starts_with("/usr/local/include") ||
+               path_str.starts_with("/System") ||
+               path_str.starts_with("/Library/Developer") ||
+               path_str.starts_with("/Applications/Xcode") ||
+               path_str.starts_with("/opt/") ||
+               path_str.contains("/bits/") ||
+               path_str.contains("/c++/") ||
+               path_str.contains("/__") ||
+               path_str.contains("/stdlib") ||
+               path_str.contains("/sys/") ||
+               path_str.contains("/linux/") ||
+               path_str.contains("/asm/") ||
+               path_str.contains("/gnu/") {
+                return; // Skip system headers
+            }
+            
+            // Skip third-party libraries (except rustycpp for testing)
+            if path_str.contains("/third-party/") && 
+               !path_str.contains("/third-party/rustycpp") {
+                // But allow certain important third-party headers
+                if !path_str.contains("/third-party/erpc/src/rpc.h") {
+                    return;
+                }
+            }
+            
+            // Track processed files to avoid infinite recursion
+            if !location.is_in_main_file() {
+                if visited_files.contains(&path_str) {
+                    return; // Already processed this file
+                }
+                visited_files.insert(path_str.clone());
+                
+                // Limit the number of files we process
+                if visited_files.len() > 100 {
+                    return; // Too many files, stop processing
+                }
+            }
         }
     }
     
@@ -116,7 +159,7 @@ fn visit_entity(entity: &Entity, ast: &mut CppAst) {
     
     // Recursively visit children
     for child in entity.get_children() {
-        visit_entity(&child, ast);
+        visit_entity(&child, ast, visited_files);
     }
 }
 
