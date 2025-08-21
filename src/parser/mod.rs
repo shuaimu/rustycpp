@@ -14,38 +14,74 @@ pub use ast_visitor::{Variable, SourceLocation};
 use std::fs;
 use std::io::{BufRead, BufReader};
 
+#[allow(dead_code)]
 pub fn parse_cpp_file(path: &Path) -> Result<CppAst, String> {
     parse_cpp_file_with_includes(path, &[])
 }
 
+#[allow(dead_code)]
 pub fn parse_cpp_file_with_includes(path: &Path, include_paths: &[std::path::PathBuf]) -> Result<CppAst, String> {
+    parse_cpp_file_with_includes_and_defines(path, include_paths, &[])
+}
+
+pub fn parse_cpp_file_with_includes_and_defines(path: &Path, include_paths: &[std::path::PathBuf], defines: &[String]) -> Result<CppAst, String> {
     // Initialize Clang
     let clang = Clang::new()
         .map_err(|e| format!("Failed to initialize Clang: {:?}", e))?;
     
     let index = Index::new(&clang, false, false);
     
-    // Build arguments with include paths
-    let mut args = vec!["-std=c++17".to_string(), "-xc++".to_string()];
+    // Build arguments with include paths and defines
+    let mut args = vec![
+        "-std=c++17".to_string(), 
+        "-xc++".to_string(),
+        // Add flags to make parsing more lenient
+        "-fno-delayed-template-parsing".to_string(),
+        "-fparse-all-comments".to_string(),
+        // Suppress certain errors that don't affect borrow checking
+        "-Wno-everything".to_string(),
+        // Don't fail on missing includes
+        "-Wno-error".to_string(),
+    ];
+    
+    // Add include paths
     for include_path in include_paths {
         args.push(format!("-I{}", include_path.display()));
     }
     
-    // Parse the translation unit
+    // Add preprocessor definitions
+    for define in defines {
+        args.push(format!("-D{}", define));
+    }
+    
+    // Parse the translation unit with skip function bodies option for better error recovery
     let tu = index
         .parser(path)
         .arguments(&args.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+        .detailed_preprocessing_record(true)
+        .skip_function_bodies(false)  // We need function bodies for analysis
+        .incomplete(true)  // Allow incomplete translation units
         .parse()
         .map_err(|e| format!("Failed to parse file: {:?}", e))?;
     
-    // Check for diagnostics
+    // Check for diagnostics but only fail on fatal errors
     let diagnostics = tu.get_diagnostics();
+    let mut has_fatal = false;
     if !diagnostics.is_empty() {
         for diag in &diagnostics {
-            if diag.get_severity() >= clang::diagnostic::Severity::Error {
-                return Err(format!("Parse error: {}", diag.get_text()));
+            // Only fail on fatal errors, ignore regular errors
+            if diag.get_severity() >= clang::diagnostic::Severity::Fatal {
+                has_fatal = true;
+                eprintln!("Fatal error: {}", diag.get_text());
+            } else if diag.get_severity() >= clang::diagnostic::Severity::Error {
+                // Log errors but don't fail
+                eprintln!("Warning (suppressed error): {}", diag.get_text());
             }
         }
+    }
+    
+    if has_fatal {
+        return Err("Fatal parsing errors encountered".to_string());
     }
     
     // Visit the AST
@@ -57,6 +93,13 @@ pub fn parse_cpp_file_with_includes(path: &Path, include_paths: &[std::path::Pat
 }
 
 fn visit_entity(entity: &Entity, ast: &mut CppAst) {
+    // Only process entities from the main file, not included headers
+    if let Some(location) = entity.get_location() {
+        if !location.is_in_main_file() {
+            return; // Skip entities from included files
+        }
+    }
+    
     match entity.get_kind() {
         EntityKind::FunctionDecl | EntityKind::Method => {
             if entity.is_definition() {
@@ -78,6 +121,7 @@ fn visit_entity(entity: &Entity, ast: &mut CppAst) {
 }
 
 /// Check if the file has @safe annotation at the beginning
+#[allow(dead_code)]
 pub fn check_file_safety_annotation(path: &Path) -> Result<bool, String> {
     let file = fs::File::open(path)
         .map_err(|e| format!("Failed to open file for safety check: {}", e))?;
@@ -85,7 +129,6 @@ pub fn check_file_safety_annotation(path: &Path) -> Result<bool, String> {
     let reader = BufReader::new(file);
     
     // Check first 20 lines for @safe annotation (before any code)
-    let mut found_code = false;
     for (line_num, line_result) in reader.lines().enumerate() {
         if line_num > 20 {
             break; // Don't look too far
@@ -111,7 +154,6 @@ pub fn check_file_safety_annotation(path: &Path) -> Result<bool, String> {
             }
         } else if !trimmed.starts_with("#") {
             // Found actual code (not preprocessor), stop looking
-            found_code = true;
             break;
         }
     }

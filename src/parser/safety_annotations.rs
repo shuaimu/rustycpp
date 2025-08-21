@@ -51,6 +51,9 @@ pub fn parse_safety_annotations(path: &Path) -> Result<SafetyContext, String> {
     let mut in_comment_block = false;
     let mut _current_line = 0;
     
+    let mut accumulated_line = String::new();
+    let mut accumulating_for_annotation = false;
+    
     for line_result in reader.lines() {
         _current_line += 1;
         let line = line_result.map_err(|e| format!("Failed to read line: {}", e))?;
@@ -96,29 +99,47 @@ pub fn parse_safety_annotations(path: &Path) -> Result<SafetyContext, String> {
             continue;
         }
         
-        // If we have a pending annotation and found code, apply it
-        if let Some(annotation) = pending_annotation.take() {
-            eprintln!("DEBUG SAFETY: Applying {:?} annotation to: {}", annotation, trimmed);
-            // Check what kind of code element follows
-            if trimmed.starts_with("namespace") || 
-               (trimmed.contains("namespace") && !trimmed.contains("using")) {
-                // Namespace declaration - applies to whole namespace contents
-                context.file_default = annotation;
-                eprintln!("DEBUG SAFETY: Set file default to {:?} (namespace)", annotation);
-            } else if is_function_declaration(trimmed) {
-                // Function declaration - extract function name and apply ONLY to this function
-                if let Some(func_name) = extract_function_name(trimmed) {
-                    context.function_overrides.push((func_name.clone(), annotation));
-                    eprintln!("DEBUG SAFETY: Set function '{}' to {:?}", func_name, annotation);
+        // If we have a pending annotation, start accumulating
+        if pending_annotation.is_some() && !accumulating_for_annotation {
+            accumulated_line.clear();
+            accumulating_for_annotation = true;
+        }
+        
+        // Only accumulate if we're looking for annotation target
+        if accumulating_for_annotation {
+            if !accumulated_line.is_empty() {
+                accumulated_line.push(' ');
+            }
+            accumulated_line.push_str(trimmed);
+            
+            // Check if we have a complete function declaration (has parentheses)
+            let should_check_annotation = accumulated_line.contains('(') && 
+                                         (accumulated_line.contains(')') || accumulated_line.contains('{'));
+            
+            // If we have a pending annotation and a complete declaration, apply it
+            if should_check_annotation {
+                if let Some(annotation) = pending_annotation.take() {
+                    eprintln!("DEBUG SAFETY: Applying {:?} annotation to: {}", annotation, &accumulated_line);
+                    // Check what kind of code element follows
+                    if accumulated_line.starts_with("namespace") || 
+                       (accumulated_line.contains("namespace") && !accumulated_line.contains("using")) {
+                        // Namespace declaration - applies to whole namespace contents
+                        context.file_default = annotation;
+                        eprintln!("DEBUG SAFETY: Set file default to {:?} (namespace)", annotation);
+                    } else if is_function_declaration(&accumulated_line) {
+                        // Function declaration - extract function name and apply ONLY to this function
+                        if let Some(func_name) = extract_function_name(&accumulated_line) {
+                            context.function_overrides.push((func_name.clone(), annotation));
+                            eprintln!("DEBUG SAFETY: Set function '{}' to {:?}", func_name, annotation);
+                        }
+                    } else {
+                        // Any other code - annotation was consumed but doesn't apply to whole file
+                        // It only applied to this single statement/declaration
+                        eprintln!("DEBUG SAFETY: Annotation consumed by single statement: {}", &accumulated_line);
+                    }
+                    accumulated_line.clear();
+                    accumulating_for_annotation = false;
                 }
-            } else if trimmed == "{" || trimmed.ends_with("{") {
-                // Block start - this would be an unsafe block within safe code
-                // For now, we'll handle this through the separate unsafe region scanner
-                // This is a placeholder for future enhancement
-            } else {
-                // Any other code - annotation was consumed but doesn't apply to whole file
-                // It only applied to this single statement/declaration
-                eprintln!("DEBUG SAFETY: Annotation consumed by single statement: {}", trimmed);
             }
         }
     }
@@ -157,6 +178,7 @@ fn extract_function_name(line: &str) -> Option<String> {
 }
 
 /// Parse safety annotation from entity comment (for clang AST)
+#[allow(dead_code)]
 pub fn parse_entity_safety(entity: &Entity) -> Option<SafetyMode> {
     if let Some(comment) = entity.get_comment() {
         if comment.contains("@safe") {

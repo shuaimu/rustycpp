@@ -460,6 +460,7 @@ fn type_to_string(ty: &Type) -> String {
     ty.get_display_name()
 }
 
+#[allow(dead_code)]
 fn check_for_unsafe_annotation(_entity: &Entity) -> bool {
     // This function is no longer used since we handle unsafe regions
     // differently using comment annotations that are scanned separately

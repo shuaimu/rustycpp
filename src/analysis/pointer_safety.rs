@@ -1,7 +1,8 @@
 use crate::parser::{Statement, Expression, Function};
 
 /// Check for unsafe pointer operations in a function's AST
-pub fn check_function_for_pointers(function: &crate::ir::IrFunction) -> Result<Vec<String>, String> {
+#[allow(dead_code)]
+pub fn check_function_for_pointers(_function: &crate::ir::IrFunction) -> Result<Vec<String>, String> {
     // For now, return empty - we need to check at AST level
     // The IR doesn't preserve all the pointer operations
     Ok(Vec::new())

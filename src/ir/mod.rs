@@ -144,6 +144,7 @@ pub enum OwnershipEdge {
     MutBorrows,
 }
 
+#[allow(dead_code)]
 pub fn build_ir(ast: CppAst) -> Result<IrProgram, String> {
     let mut functions = Vec::new();
     let ownership_graph = DiGraph::new();
@@ -234,6 +235,7 @@ fn convert_function(func: &crate::parser::Function) -> Result<IrFunction, String
 }
 
 // Helper function to get line number from a statement
+#[allow(dead_code)]
 fn get_statement_line(stmt: &crate::parser::Statement) -> Option<u32> {
     use crate::parser::Statement;
     match stmt {

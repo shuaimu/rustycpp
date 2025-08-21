@@ -30,6 +30,11 @@ struct Args {
     #[arg(short = 'I', value_name = "DIR")]
     include_paths: Vec<PathBuf>,
 
+    /// Preprocessor definitions (can be specified multiple times)
+    /// Example: -D CONFIG_H=\"config.h\" -D DEBUG=1
+    #[arg(short = 'D', value_name = "DEFINE")]
+    defines: Vec<String>,
+
     /// Path to compile_commands.json for extracting include paths
     #[arg(long, value_name = "FILE")]
     compile_commands: Option<PathBuf>,
@@ -49,7 +54,7 @@ fn main() {
     println!("{}", "Rusty C++ Checker".bold().blue());
     println!("Analyzing: {}", args.input.display());
     
-    match analyze_file(&args.input, &args.include_paths, args.compile_commands.as_ref()) {
+    match analyze_file(&args.input, &args.include_paths, &args.defines, args.compile_commands.as_ref()) {
         Ok(results) => {
             if results.is_empty() {
                 println!("{}", "✓ No borrow checking violations found!".green());
@@ -68,7 +73,7 @@ fn main() {
     }
 }
 
-fn analyze_file(path: &PathBuf, include_paths: &[PathBuf], compile_commands: Option<&PathBuf>) -> Result<Vec<String>, String> {
+fn analyze_file(path: &PathBuf, include_paths: &[PathBuf], defines: &[String], compile_commands: Option<&PathBuf>) -> Result<Vec<String>, String> {
     // Start with CLI-provided include paths
     let mut all_include_paths = include_paths.to_vec();
     
@@ -86,8 +91,8 @@ fn analyze_file(path: &PathBuf, include_paths: &[PathBuf], compile_commands: Opt
     header_cache.set_include_paths(all_include_paths.clone());
     header_cache.parse_includes_from_source(path)?;
     
-    // Parse the C++ file with include paths
-    let ast = parser::parse_cpp_file_with_includes(path, &all_include_paths)?;
+    // Parse the C++ file with include paths and defines
+    let ast = parser::parse_cpp_file_with_includes_and_defines(path, &all_include_paths, defines)?;
     
     // Parse safety annotations using the unified rule
     let safety_context = parser::safety_annotations::parse_safety_annotations(path)?;
@@ -102,8 +107,11 @@ fn analyze_file(path: &PathBuf, include_paths: &[PathBuf], compile_commands: Opt
     
     // Check for unsafe pointer operations and unsafe propagation in safe functions
     let mut violations = Vec::new();
+    eprintln!("DEBUG: Found {} functions in AST", ast.functions.len());
     for function in &ast.functions {
+        eprintln!("DEBUG: Processing function '{}' with {} statements", function.name, function.body.len());
         if safety_context.should_check_function(&function.name) {
+            eprintln!("DEBUG: Function '{}' is marked safe, performing checks", function.name);
             // Check for pointer operations
             let pointer_errors = analysis::pointer_safety::check_parsed_function_for_pointers(function);
             violations.extend(pointer_errors);

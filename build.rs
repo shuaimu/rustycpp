@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::Path;
 
 fn main() {
     // Get the target OS
@@ -16,7 +16,7 @@ fn main() {
             ];
             
             for path in &llvm_paths {
-                if std::path::Path::new(path).exists() {
+                if Path::new(path).exists() {
                     println!("cargo:rustc-link-search=native={}", path);
                     
                     // Use @rpath for macOS to make binaries relocatable
@@ -40,7 +40,7 @@ fn main() {
             ];
             
             for path in &llvm_paths {
-                if std::path::Path::new(path).exists() {
+                if Path::new(path).exists() {
                     println!("cargo:rustc-link-search=native={}", path);
                     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", path);
                     break;

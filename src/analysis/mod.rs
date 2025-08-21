@@ -29,6 +29,7 @@ pub enum ErrorKind {
     LifetimeViolation,
 }
 
+#[allow(dead_code)]
 pub fn check_borrows(program: IrProgram) -> Result<Vec<String>, String> {
     let mut errors = Vec::new();
     
@@ -40,6 +41,7 @@ pub fn check_borrows(program: IrProgram) -> Result<Vec<String>, String> {
     Ok(errors)
 }
 
+#[allow(dead_code)]
 pub fn check_borrows_with_annotations_and_safety(
     program: IrProgram, 
     header_cache: HeaderCache,
@@ -117,6 +119,7 @@ fn has_any_safe_functions(program: &IrProgram, header_cache: &HeaderCache) -> bo
     false
 }
 
+#[allow(dead_code)]
 pub fn check_borrows_with_annotations(program: IrProgram, header_cache: HeaderCache) -> Result<Vec<String>, String> {
     use crate::parser::annotations::SafetyAnnotation;
     let mut errors = Vec::new();
@@ -497,6 +500,7 @@ struct TrackerState {
 #[derive(Clone)]
 struct LoopEntryState {
     ownership: HashMap<String, OwnershipState>,
+    #[allow(dead_code)]
     borrows: HashMap<String, BorrowInfo>,
 }
 

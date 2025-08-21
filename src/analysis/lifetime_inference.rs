@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use crate::ir::{IrFunction, IrStatement, BorrowKind};
 
 /// Represents an inferred lifetime for a variable
@@ -166,6 +166,7 @@ impl LifetimeInferencer {
     }
     
     /// Get the inferred lifetime for a variable
+    #[allow(dead_code)]
     pub fn get_lifetime(&self, var: &str) -> Option<&InferredLifetime> {
         self.lifetimes.get(var)
     }

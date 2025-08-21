@@ -44,6 +44,7 @@ impl LifetimeScope {
     }
     
     /// Add a lifetime constraint
+    #[allow(dead_code)]
     pub fn add_constraint(&mut self, constraint: LifetimeBound) {
         self.constraints.push(constraint);
     }
@@ -211,7 +212,7 @@ fn check_function_call(
     for (i, (arg, expected)) in args.iter().zip(&signature.param_lifetimes).enumerate() {
         if let Some(expected_lifetime) = expected {
             match expected_lifetime {
-                LifetimeAnnotation::Ref(expected) | LifetimeAnnotation::MutRef(expected) => {
+                LifetimeAnnotation::Ref(_expected) | LifetimeAnnotation::MutRef(_expected) => {
                     // The argument must be a reference with appropriate lifetime
                     if scope.is_owned(arg) {
                         errors.push(format!(
@@ -251,13 +252,13 @@ fn check_function_call(
     }
     
     // Check return lifetime
-    if let (Some(result_var), Some(return_lifetime)) = (result, &signature.return_lifetime) {
+    if let (Some(_result_var), Some(return_lifetime)) = (result, &signature.return_lifetime) {
         match return_lifetime {
             LifetimeAnnotation::Ref(ret_lifetime) | LifetimeAnnotation::MutRef(ret_lifetime) => {
                 // The return value is a reference that borrows from one of the parameters
                 // Map the return lifetime to the actual argument lifetime
                 let actual_lifetime = map_lifetime_to_actual(ret_lifetime, &arg_lifetimes);
-                if let Some(lifetime) = actual_lifetime {
+                if let Some(_lifetime) = actual_lifetime {
                     // The result variable gets this lifetime
                     // Note: We're not modifying scope here as it's borrowed
                     // In a real implementation, we'd need mutable access
@@ -296,7 +297,7 @@ fn check_return_lifetime(
     errors
 }
 
-fn is_parameter(var_name: &str, function: &IrFunction) -> bool {
+fn is_parameter(var_name: &str, _function: &IrFunction) -> bool {
     // Check if the variable is a function parameter
     // In a real implementation, we'd track this properly
     // For now, assume variables starting with "param" are parameters

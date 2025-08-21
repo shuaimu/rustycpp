@@ -1,9 +1,10 @@
 [env]
-# Z3 header location for macOS with Homebrew
-Z3_SYS_Z3_HEADER = "/opt/homebrew/include/z3.h"
+# Z3 header location - automatically determined based on OS
+# For macOS with Homebrew:
+# Z3_SYS_Z3_HEADER = "/opt/homebrew/include/z3.h"
 
-# For Linux, uncomment and adjust:
-# Z3_SYS_Z3_HEADER = "/usr/include/z3.h"
+# For Linux (standard location):
+Z3_SYS_Z3_HEADER = "/usr/include/z3.h"
 
 [target.aarch64-apple-darwin]
 # macOS ARM64 (Apple Silicon) specific settings

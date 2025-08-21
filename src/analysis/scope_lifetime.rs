@@ -1,27 +1,32 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use crate::ir::{IrFunction, IrStatement, IrProgram, BasicBlock};
 use crate::parser::HeaderCache;
-use crate::parser::annotations::{FunctionSignature, LifetimeAnnotation, LifetimeBound};
+use crate::parser::annotations::{FunctionSignature, LifetimeAnnotation};
 use petgraph::graph::NodeIndex;
 use petgraph::Direction;
 
 /// Represents a scope in the program (function, block, loop, etc.)
 #[derive(Debug, Clone)]
 pub struct Scope {
+    #[allow(dead_code)]
     pub id: usize,
     pub parent: Option<usize>,
+    #[allow(dead_code)]
     pub kind: ScopeKind,
     /// Variables declared in this scope
     pub local_variables: HashSet<String>,
     /// References created in this scope
     pub local_references: HashSet<String>,
     /// Starting point in the CFG
+    #[allow(dead_code)]
     pub entry_block: Option<NodeIndex>,
     /// Ending point(s) in the CFG
+    #[allow(dead_code)]
     pub exit_blocks: Vec<NodeIndex>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum ScopeKind {
     Function,
     Block,
@@ -51,6 +56,7 @@ pub struct LifetimeConstraint {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum ConstraintKind {
     Outlives { longer: String, shorter: String },
     Equal { a: String, b: String },
@@ -349,13 +355,13 @@ fn analyze_block(
 
 fn check_call_lifetimes(
     func_name: &str,
-    args: &[String],
+    _args: &[String],
     result: Option<&String>,
     signature: &FunctionSignature,
     scope_id: usize,
     tracker: &mut ScopedLifetimeTracker,
 ) -> Vec<String> {
-    let mut errors = Vec::new();
+    let errors = Vec::new();
     
     // Check lifetime bounds from signature
     for bound in &signature.lifetime_bounds {
