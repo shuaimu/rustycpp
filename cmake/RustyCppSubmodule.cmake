@@ -40,88 +40,6 @@ function(check_command_exists CMD VAR)
     endif()
 endfunction()
 
-# Function to detect C++ standard library include paths
-function(detect_cpp_include_paths)
-    message(STATUS "Detecting C++ standard library include paths...")
-    
-    # Try to get the compiler's include paths
-    if(CMAKE_CXX_COMPILER)
-        # Run the compiler with -E -x c++ -v to get include paths
-        execute_process(
-            COMMAND ${CMAKE_CXX_COMPILER} -E -x c++ -v /dev/null
-            OUTPUT_VARIABLE COMPILER_OUTPUT
-            ERROR_VARIABLE COMPILER_ERROR
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_STRIP_TRAILING_WHITESPACE
-        )
-        
-        # Parse the output to find include paths
-        string(REGEX MATCH "#include <\\.\\.\\.> search starts here:(.*)End of search list" INCLUDE_SECTION "${COMPILER_ERROR}")
-        if(CMAKE_MATCH_1)
-            string(REGEX REPLACE "\n" ";" INCLUDE_LINES "${CMAKE_MATCH_1}")
-            set(CPP_INCLUDE_PATHS "")
-            foreach(LINE ${INCLUDE_LINES})
-                string(STRIP "${LINE}" STRIPPED_LINE)
-                if(STRIPPED_LINE AND NOT STRIPPED_LINE MATCHES "^#")
-                    list(APPEND CPP_INCLUDE_PATHS "${STRIPPED_LINE}")
-                endif()
-            endforeach()
-            
-            if(CPP_INCLUDE_PATHS)
-                # Join paths with colons for environment variable
-                string(REPLACE ";" ":" CPP_INCLUDE_PATH_STR "${CPP_INCLUDE_PATHS}")
-                set(ENV{CPLUS_INCLUDE_PATH} "${CPP_INCLUDE_PATH_STR}")
-                set(RUSTYCPP_CXX_INCLUDE_PATHS ${CPP_INCLUDE_PATHS} PARENT_SCOPE)
-                message(STATUS "Detected C++ include paths: ${CPP_INCLUDE_PATH_STR}")
-            endif()
-        endif()
-    endif()
-    
-    # Fallback: try to detect common paths based on compiler version
-    if(NOT DEFINED RUSTYCPP_CXX_INCLUDE_PATHS)
-        # Get GCC/G++ version if available
-        execute_process(
-            COMMAND ${CMAKE_CXX_COMPILER} -dumpversion
-            OUTPUT_VARIABLE GCC_VERSION
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET
-        )
-        
-        if(GCC_VERSION)
-            # Extract major version
-            string(REGEX MATCH "^([0-9]+)" GCC_MAJOR_VERSION "${GCC_VERSION}")
-            
-            # Common paths for GCC
-            set(FALLBACK_PATHS
-                "/usr/include/c++/${GCC_MAJOR_VERSION}"
-                "/usr/include/x86_64-linux-gnu/c++/${GCC_MAJOR_VERSION}"
-                "/usr/include/c++/${GCC_MAJOR_VERSION}/backward"
-                "/usr/include/x86_64-linux-gnu"
-                "/usr/include"
-            )
-            
-            # Check which paths exist
-            set(EXISTING_PATHS "")
-            foreach(PATH ${FALLBACK_PATHS})
-                if(EXISTS ${PATH})
-                    list(APPEND EXISTING_PATHS ${PATH})
-                endif()
-            endforeach()
-            
-            if(EXISTING_PATHS)
-                string(REPLACE ";" ":" CPP_INCLUDE_PATH_STR "${EXISTING_PATHS}")
-                set(ENV{CPLUS_INCLUDE_PATH} "${CPP_INCLUDE_PATH_STR}")
-                set(RUSTYCPP_CXX_INCLUDE_PATHS ${EXISTING_PATHS} PARENT_SCOPE)
-                message(STATUS "Using fallback C++ include paths: ${CPP_INCLUDE_PATH_STR}")
-            endif()
-        endif()
-    endif()
-    
-    # Set CPATH for C headers
-    set(C_PATHS "/usr/include/x86_64-linux-gnu:/usr/include")
-    set(ENV{CPATH} "${C_PATHS}")
-endfunction()
-
 # Function to check for required dependencies
 function(check_rustycpp_dependencies)
     message(STATUS "Checking RustyCpp dependencies...")
@@ -130,9 +48,6 @@ function(check_rustycpp_dependencies)
         message(STATUS "Skipping RustyCpp dependency checks")
         return()
     endif()
-
-    # Detect C++ include paths first
-    detect_cpp_include_paths()
 
     set(MISSING_DEPS FALSE)
     
@@ -283,15 +198,6 @@ function(create_rustycpp_build_target)
         list(APPEND BUILD_ENV "Z3_SYS_Z3_HEADER=$ENV{Z3_SYS_Z3_HEADER}")
     endif()
     
-    # Add C++ include paths if detected
-    if(DEFINED ENV{CPLUS_INCLUDE_PATH})
-        list(APPEND BUILD_ENV "CPLUS_INCLUDE_PATH=$ENV{CPLUS_INCLUDE_PATH}")
-    endif()
-    
-    if(DEFINED ENV{CPATH})
-        list(APPEND BUILD_ENV "CPATH=$ENV{CPATH}")
-    endif()
-    
     # Create a custom target to build the rusty-cpp-checker
     if(BUILD_ENV)
         add_custom_target(build_rusty_cpp_checker
@@ -367,35 +273,15 @@ function(add_borrow_check SOURCE_FILE)
     # Get absolute path for the source file
     get_filename_component(SOURCE_ABS ${SOURCE_FILE} ABSOLUTE)
     
-    # Set up environment for the checker
-    set(CHECKER_ENV)
-    if(DEFINED ENV{CPLUS_INCLUDE_PATH})
-        list(APPEND CHECKER_ENV "CPLUS_INCLUDE_PATH=$ENV{CPLUS_INCLUDE_PATH}")
-    endif()
-    if(DEFINED ENV{CPATH})
-        list(APPEND CHECKER_ENV "CPATH=$ENV{CPATH}")
-    endif()
-    
     # Create custom command for borrow checking
-    if(CHECKER_ENV)
-        add_custom_command(
-            OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CHECK_NAME}.stamp
-            COMMAND ${CMAKE_COMMAND} -E env ${CHECKER_ENV} ${CPP_BORROW_CHECKER} ${SOURCE_ABS} ${INCLUDE_FLAGS} ${DEFINE_FLAGS}
-            COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/${CHECK_NAME}.stamp
-            DEPENDS ${SOURCE_ABS} ${CPP_BORROW_CHECKER}
-            COMMENT "Borrow checking ${SOURCE_FILE}"
-            VERBATIM
-        )
-    else()
-        add_custom_command(
-            OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CHECK_NAME}.stamp
-            COMMAND ${CPP_BORROW_CHECKER} ${SOURCE_ABS} ${INCLUDE_FLAGS} ${DEFINE_FLAGS}
-            COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/${CHECK_NAME}.stamp
-            DEPENDS ${SOURCE_ABS} ${CPP_BORROW_CHECKER}
-            COMMENT "Borrow checking ${SOURCE_FILE}"
-            VERBATIM
-        )
-    endif()
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CHECK_NAME}.stamp
+        COMMAND ${CPP_BORROW_CHECKER} ${SOURCE_ABS} ${INCLUDE_FLAGS} ${DEFINE_FLAGS}
+        COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/${CHECK_NAME}.stamp
+        DEPENDS ${SOURCE_ABS} ${CPP_BORROW_CHECKER}
+        COMMENT "Borrow checking ${SOURCE_FILE}"
+        VERBATIM
+    )
     
     # Add to custom target
     add_custom_target(${CHECK_NAME} ALL
@@ -488,34 +374,14 @@ function(add_borrow_check_target TARGET_NAME)
             # Get absolute path for the source file
             get_filename_component(SOURCE_ABS ${SOURCE} ABSOLUTE)
             
-            # Set up environment for the checker
-            set(CHECKER_ENV)
-            if(DEFINED ENV{CPLUS_INCLUDE_PATH})
-                list(APPEND CHECKER_ENV "CPLUS_INCLUDE_PATH=$ENV{CPLUS_INCLUDE_PATH}")
-            endif()
-            if(DEFINED ENV{CPATH})
-                list(APPEND CHECKER_ENV "CPATH=$ENV{CPATH}")
-            endif()
-            
-            if(CHECKER_ENV)
-                add_custom_command(
-                    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CHECK_NAME}.stamp
-                    COMMAND ${CMAKE_COMMAND} -E env ${CHECKER_ENV} ${CPP_BORROW_CHECKER} ${SOURCE_ABS} ${INCLUDE_FLAGS} ${DEFINE_FLAGS}
-                    COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/${CHECK_NAME}.stamp
-                    DEPENDS ${SOURCE_ABS} ${CPP_BORROW_CHECKER}
-                    COMMENT "Borrow checking ${SOURCE} (from ${TARGET_NAME})"
-                    VERBATIM
-                )
-            else()
-                add_custom_command(
-                    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CHECK_NAME}.stamp
-                    COMMAND ${CPP_BORROW_CHECKER} ${SOURCE_ABS} ${INCLUDE_FLAGS} ${DEFINE_FLAGS}
-                    COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/${CHECK_NAME}.stamp
-                    DEPENDS ${SOURCE_ABS} ${CPP_BORROW_CHECKER}
-                    COMMENT "Borrow checking ${SOURCE} (from ${TARGET_NAME})"
-                    VERBATIM
-                )
-            endif()
+            add_custom_command(
+                OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CHECK_NAME}.stamp
+                COMMAND ${CPP_BORROW_CHECKER} ${SOURCE_ABS} ${INCLUDE_FLAGS} ${DEFINE_FLAGS}
+                COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/${CHECK_NAME}.stamp
+                DEPENDS ${SOURCE_ABS} ${CPP_BORROW_CHECKER}
+                COMMENT "Borrow checking ${SOURCE} (from ${TARGET_NAME})"
+                VERBATIM
+            )
             
             # Add custom target for this check
             add_custom_target(${CHECK_NAME}
