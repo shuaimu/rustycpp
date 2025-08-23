@@ -53,84 +53,32 @@ function(detect_cpp_include_paths)
             ERROR_VARIABLE COMPILER_ERROR
             OUTPUT_STRIP_TRAILING_WHITESPACE
             ERROR_STRIP_TRAILING_WHITESPACE
-            RESULT_VARIABLE COMPILER_RESULT
         )
         
-        # Debug: Show what we got from compiler
-        # message(STATUS "Compiler stderr output: ${COMPILER_ERROR}")
-        
-        # More flexible regex patterns to handle different compiler outputs
-        # Try different patterns that work across GCC versions
-        set(INCLUDE_SECTION "")
-        
-        # Pattern 1: Standard GCC format with dots
-        string(REGEX MATCH "#include <\\.\\.\\.> search starts here:(.*)End of search list" INCLUDE_MATCH1 "${COMPILER_ERROR}")
+        # Parse the output to find include paths
+        string(REGEX MATCH "#include <\\.\\.\\.> search starts here:(.*)End of search list" INCLUDE_SECTION "${COMPILER_ERROR}")
         if(CMAKE_MATCH_1)
-            set(INCLUDE_SECTION "${CMAKE_MATCH_1}")
-        endif()
-        
-        # Pattern 2: Without dots (some versions)
-        if(NOT INCLUDE_SECTION)
-            string(REGEX MATCH "#include <\\.\\.\\.> search starts here:(.*)End of search list" INCLUDE_MATCH2 "${COMPILER_ERROR}")
-            if(CMAKE_MATCH_1)
-                set(INCLUDE_SECTION "${CMAKE_MATCH_1}")
-            endif()
-        endif()
-        
-        # Pattern 3: Look for the section between the markers more broadly
-        if(NOT INCLUDE_SECTION)
-            # Split by lines and look for the markers
-            string(REPLACE "\n" ";" ERROR_LINES "${COMPILER_ERROR}")
-            set(IN_INCLUDE_SECTION FALSE)
-            set(INCLUDE_LINES "")
-            foreach(LINE ${ERROR_LINES})
-                if(LINE MATCHES "#include.*search starts here")
-                    set(IN_INCLUDE_SECTION TRUE)
-                elseif(LINE MATCHES "End of search list")
-                    set(IN_INCLUDE_SECTION FALSE)
-                elseif(IN_INCLUDE_SECTION)
-                    list(APPEND INCLUDE_LINES "${LINE}")
-                endif()
-            endforeach()
-            
-            if(INCLUDE_LINES)
-                string(REPLACE ";" "\n" INCLUDE_SECTION "${INCLUDE_LINES}")
-            endif()
-        endif()
-        
-        if(INCLUDE_SECTION)
-            string(REGEX REPLACE "\n" ";" INCLUDE_LINES "${INCLUDE_SECTION}")
+            string(REGEX REPLACE "\n" ";" INCLUDE_LINES "${CMAKE_MATCH_1}")
             set(CPP_INCLUDE_PATHS "")
             foreach(LINE ${INCLUDE_LINES})
                 string(STRIP "${LINE}" STRIPPED_LINE)
                 if(STRIPPED_LINE AND NOT STRIPPED_LINE MATCHES "^#")
-                    # Ensure the path exists before adding
-                    if(EXISTS "${STRIPPED_LINE}")
-                        list(APPEND CPP_INCLUDE_PATHS "${STRIPPED_LINE}")
-                    endif()
+                    list(APPEND CPP_INCLUDE_PATHS "${STRIPPED_LINE}")
                 endif()
             endforeach()
             
             if(CPP_INCLUDE_PATHS)
-                # Remove duplicates
-                list(REMOVE_DUPLICATES CPP_INCLUDE_PATHS)
                 # Join paths with colons for environment variable
                 string(REPLACE ";" ":" CPP_INCLUDE_PATH_STR "${CPP_INCLUDE_PATHS}")
                 set(ENV{CPLUS_INCLUDE_PATH} "${CPP_INCLUDE_PATH_STR}")
                 set(RUSTYCPP_CXX_INCLUDE_PATHS ${CPP_INCLUDE_PATHS} PARENT_SCOPE)
                 message(STATUS "Detected C++ include paths: ${CPP_INCLUDE_PATH_STR}")
-            else()
-                message(STATUS "Could not extract include paths from compiler output, trying fallback")
             endif()
-        else()
-            message(STATUS "Could not parse compiler include paths, trying fallback")
         endif()
     endif()
     
     # Fallback: try to detect common paths based on compiler version
-    if(NOT DEFINED RUSTYCPP_CXX_INCLUDE_PATHS OR NOT RUSTYCPP_CXX_INCLUDE_PATHS)
-        message(STATUS "Using fallback method to detect C++ include paths")
-        
+    if(NOT DEFINED RUSTYCPP_CXX_INCLUDE_PATHS)
         # Get GCC/G++ version if available
         execute_process(
             COMMAND ${CMAKE_CXX_COMPILER} -dumpversion
@@ -140,38 +88,15 @@ function(detect_cpp_include_paths)
         )
         
         if(GCC_VERSION)
-            # Extract major version - handle both single number (11) and dotted (11.2.0)
+            # Extract major version
             string(REGEX MATCH "^([0-9]+)" GCC_MAJOR_VERSION "${GCC_VERSION}")
-            message(STATUS "Detected GCC major version: ${GCC_MAJOR_VERSION}")
             
-            # Try multiple possible GCC versions in case the exact one doesn't exist
-            set(GCC_VERSIONS ${GCC_MAJOR_VERSION})
-            
-            # Add some common fallback versions
-            if(GCC_MAJOR_VERSION EQUAL 12)
-                list(APPEND GCC_VERSIONS 11 10)
-            elseif(GCC_MAJOR_VERSION EQUAL 11)
-                list(APPEND GCC_VERSIONS 12 10)
-            elseif(GCC_MAJOR_VERSION EQUAL 10)
-                list(APPEND GCC_VERSIONS 11 9)
-            else()
-                list(APPEND GCC_VERSIONS 12 11 10 9)
-            endif()
-            
-            # Build list of potential paths
-            set(FALLBACK_PATHS "")
-            foreach(VER ${GCC_VERSIONS})
-                list(APPEND FALLBACK_PATHS
-                    "/usr/include/c++/${VER}"
-                    "/usr/include/x86_64-linux-gnu/c++/${VER}"
-                    "/usr/include/c++/${VER}/backward"
-                )
-            endforeach()
-            
-            # Add architecture-independent paths
-            list(APPEND FALLBACK_PATHS
+            # Common paths for GCC
+            set(FALLBACK_PATHS
+                "/usr/include/c++/${GCC_MAJOR_VERSION}"
+                "/usr/include/x86_64-linux-gnu/c++/${GCC_MAJOR_VERSION}"
+                "/usr/include/c++/${GCC_MAJOR_VERSION}/backward"
                 "/usr/include/x86_64-linux-gnu"
-                "/usr/local/include"
                 "/usr/include"
             )
             
@@ -184,34 +109,17 @@ function(detect_cpp_include_paths)
             endforeach()
             
             if(EXISTING_PATHS)
-                # Remove duplicates
-                list(REMOVE_DUPLICATES EXISTING_PATHS)
                 string(REPLACE ";" ":" CPP_INCLUDE_PATH_STR "${EXISTING_PATHS}")
                 set(ENV{CPLUS_INCLUDE_PATH} "${CPP_INCLUDE_PATH_STR}")
                 set(RUSTYCPP_CXX_INCLUDE_PATHS ${EXISTING_PATHS} PARENT_SCOPE)
                 message(STATUS "Using fallback C++ include paths: ${CPP_INCLUDE_PATH_STR}")
-            else()
-                message(WARNING "Could not find any C++ include paths")
             endif()
-        else()
-            message(WARNING "Could not determine compiler version for fallback paths")
         endif()
     endif()
     
-    # Set CPATH for C headers - check what exists
-    set(C_PATHS "")
-    if(EXISTS "/usr/include/x86_64-linux-gnu")
-        list(APPEND C_PATHS "/usr/include/x86_64-linux-gnu")
-    endif()
-    if(EXISTS "/usr/include")
-        list(APPEND C_PATHS "/usr/include")
-    endif()
-    
-    if(C_PATHS)
-        string(REPLACE ";" ":" C_PATH_STR "${C_PATHS}")
-        set(ENV{CPATH} "${C_PATH_STR}")
-        message(STATUS "Set CPATH: ${C_PATH_STR}")
-    endif()
+    # Set CPATH for C headers
+    set(C_PATHS "/usr/include/x86_64-linux-gnu:/usr/include")
+    set(ENV{CPATH} "${C_PATHS}")
 endfunction()
 
 # Function to check for required dependencies
