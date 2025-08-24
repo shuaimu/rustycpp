@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <cstddef>  // for size_t
 #include <utility>  // for std::move, std::forward
 
 // Arc<T> - Atomically Reference Counted pointer

@@ -12,13 +12,18 @@
 // - Explicit nullability (Option)
 // - Explicit error handling (Result)
 
-#include "rusty/std_minimal.hpp"  // Minimal std support
+// #include "rusty/std_minimal.hpp"  // Not needed with standard library
 #include "rusty/box.hpp"
 #include "rusty/arc.hpp"
 #include "rusty/rc.hpp"
 #include "rusty/vec.hpp"
 #include "rusty/option.hpp"
 #include "rusty/result.hpp"
+#include "rusty/string.hpp"
+#include "rusty/hashmap.hpp"
+#include "rusty/hashset.hpp"
+#include "rusty/btreemap.hpp"
+#include "rusty/btreeset.hpp"
 
 // Convenience aliases in rusty namespace
 // @safe

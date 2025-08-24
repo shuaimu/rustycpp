@@ -24,28 +24,28 @@ namespace rusty {
 template<typename T>
 class Vec {
 private:
-    T* data;
-    size_t length;
-    size_t capacity;
+    T* data_;
+    size_t size_;
+    size_t capacity_;
     
     void grow() {
-        size_t new_capacity = capacity == 0 ? 1 : capacity * 2;
+        size_t new_capacity = capacity_ == 0 ? 1 : capacity_ * 2;
         T* new_data = static_cast<T*>(::operator new(new_capacity * sizeof(T)));
         
         // Move existing elements
-        for (size_t i = 0; i < length; ++i) {
-            new (&new_data[i]) T(std::move(data[i]));
-            data[i].~T();
+        for (size_t i = 0; i < size_; ++i) {
+            new (&new_data[i]) T(std::move(data_[i]));
+            data_[i].~T();
         }
         
-        ::operator delete(data);
-        data = new_data;
-        capacity = new_capacity;
+        ::operator delete(data_);
+        data_ = new_data;
+        capacity_ = new_capacity;
     }
     
 public:
     // Default constructor - empty vec
-    Vec() : data(nullptr), length(0), capacity(0) {}
+    Vec() : data_(nullptr), size_(0), capacity_(0) {}
     
     // Rust-idiomatic factory method - Vec::new()
     // @lifetime: owned
@@ -58,24 +58,24 @@ public:
     static Vec<T> with_capacity(size_t cap) {
         Vec<T> v;
         if (cap > 0) {
-            v.data = static_cast<T*>(::operator new(cap * sizeof(T)));
-            v.capacity = cap;
+            v.data_ = static_cast<T*>(::operator new(cap * sizeof(T)));
+            v.capacity_ = cap;
         }
         return v;
     }
     
     // Constructor with initial capacity (C++ style)
     explicit Vec(size_t initial_capacity) 
-        : data(nullptr), length(0), capacity(0) {
+        : data_(nullptr), size_(0), capacity_(0) {
         if (initial_capacity > 0) {
-            data = static_cast<T*>(::operator new(initial_capacity * sizeof(T)));
-            capacity = initial_capacity;
+            data_ = static_cast<T*>(::operator new(initial_capacity * sizeof(T)));
+            capacity_ = initial_capacity;
         }
     }
     
     // Initializer list constructor
     Vec(std::initializer_list<T> init) 
-        : data(nullptr), length(0), capacity(0) {
+        : data_(nullptr), size_(0), capacity_(0) {
         reserve(init.size());
         for (const T& item : init) {
             push(item);
@@ -88,10 +88,10 @@ public:
     
     // Move constructor
     Vec(Vec&& other) noexcept 
-        : data(other.data), length(other.length), capacity(other.capacity) {
-        other.data = nullptr;
-        other.length = 0;
-        other.capacity = 0;
+        : data_(other.data_), size_(other.size_), capacity_(other.capacity_) {
+        other.data_ = nullptr;
+        other.size_ = 0;
+        other.capacity_ = 0;
     }
     
     // Move assignment
@@ -99,16 +99,16 @@ public:
         if (this != &other) {
             // Clean up existing data
             clear();
-            ::operator delete(data);
+            ::operator delete(data_);
             
             // Take ownership
-            data = other.data;
-            length = other.length;
-            capacity = other.capacity;
+            data_ = other.data_;
+            size_ = other.size_;
+            capacity_ = other.capacity_;
             
-            other.data = nullptr;
-            other.length = 0;
-            other.capacity = 0;
+            other.data_ = nullptr;
+            other.size_ = 0;
+            other.capacity_ = 0;
         }
         return *this;
     }
@@ -116,119 +116,132 @@ public:
     // Destructor
     ~Vec() {
         clear();
-        ::operator delete(data);
+        ::operator delete(data_);
     }
     
     // Push element to the back
     void push(T value) {
-        if (length >= capacity) {
+        if (size_ >= capacity_) {
             grow();
         }
-        new (&data[length]) T(std::move(value));
-        ++length;
+        new (&data_[size_]) T(std::move(value));
+        ++size_;
     }
     
     // Pop element from the back
     // Returns empty Option-like type if vec is empty
     T pop() {
-        assert(length > 0);
-        --length;
-        T result = std::move(data[length]);
-        data[length].~T();
+        assert(size_ > 0);
+        --size_;
+        T result = std::move(data_[size_]);
+        data_[size_].~T();
         return result;
     }
     
     // Access element by index
     // @lifetime: (&'a) -> &'a
     T& operator[](size_t index) {
-        assert(index < length);
-        return data[index];
+        assert(index < size_);
+        return data_[index];
     }
     
     // @lifetime: (&'a) -> &'a
     const T& operator[](size_t index) const {
-        assert(index < length);
-        return data[index];
+        assert(index < size_);
+        return data_[index];
     }
     
     // Get first element
     // @lifetime: (&'a) -> &'a
     T& front() {
-        assert(length > 0);
-        return data[0];
+        assert(size_ > 0);
+        return data_[0];
     }
     
     // @lifetime: (&'a) -> &'a
     const T& front() const {
-        assert(length > 0);
-        return data[0];
+        assert(size_ > 0);
+        return data_[0];
     }
     
     // Get last element
     // @lifetime: (&'a) -> &'a
     T& back() {
-        assert(length > 0);
-        return data[length - 1];
+        assert(size_ > 0);
+        return data_[size_ - 1];
     }
     
     // @lifetime: (&'a) -> &'a
     const T& back() const {
-        assert(length > 0);
-        return data[length - 1];
+        assert(size_ > 0);
+        return data_[size_ - 1];
     }
     
     // Get size
-    size_t len() const { return length; }
-    size_t size() const { return length; }
+    size_t len() const { return size_; }
+    size_t size() const { return size_; }
     
     // Check if empty
-    bool is_empty() const { return length == 0; }
+    bool is_empty() const { return size_ == 0; }
     
     // Get capacity
-    size_t cap() const { return capacity; }
+    size_t capacity() const { return capacity_; }
     
     // Reserve capacity
     void reserve(size_t new_capacity) {
-        if (new_capacity > capacity) {
+        if (new_capacity > capacity_) {
             T* new_data = static_cast<T*>(::operator new(new_capacity * sizeof(T)));
             
             // Move existing elements
-            for (size_t i = 0; i < length; ++i) {
-                new (&new_data[i]) T(std::move(data[i]));
-                data[i].~T();
+            for (size_t i = 0; i < size_; ++i) {
+                new (&new_data[i]) T(std::move(data_[i]));
+                data_[i].~T();
             }
             
-            ::operator delete(data);
-            data = new_data;
-            capacity = new_capacity;
+            ::operator delete(data_);
+            data_ = new_data;
+            capacity_ = new_capacity;
         }
     }
     
     // Clear all elements
     void clear() {
-        for (size_t i = 0; i < length; ++i) {
-            data[i].~T();
+        for (size_t i = 0; i < size_; ++i) {
+            data_[i].~T();
         }
-        length = 0;
+        size_ = 0;
     }
     
     // Iterator support
     // @lifetime: (&'a) -> &'a
-    T* begin() { return data; }
-    const T* begin() const { return data; }
+    T* begin() { return data_; }
+    const T* begin() const { return data_; }
     
     // @lifetime: (&'a) -> &'a
-    T* end() { return data + length; }
-    const T* end() const { return data + length; }
+    T* end() { return data_ + size_; }
+    const T* end() const { return data_ + size_; }
     
     // Clone the Vec (explicit deep copy)
+    // @lifetime: owned
     Vec clone() const {
-        Vec result;
-        result.reserve(length);
-        for (size_t i = 0; i < length; ++i) {
-            result.push(data[i]);  // Requires T to be copyable
+        Vec result = Vec::with_capacity(capacity_);
+        for (size_t i = 0; i < size_; ++i) {
+            result.push(data_[i]);  // Requires T to be copyable
         }
         return result;
+    }
+    
+    // Equality comparison
+    bool operator==(const Vec& other) const {
+        if (size_ != other.size_) return false;
+        for (size_t i = 0; i < size_; ++i) {
+            if (!(data_[i] == other.data_[i])) return false;
+        }
+        return true;
+    }
+    
+    bool operator!=(const Vec& other) const {
+        return !(*this == other);
     }
 };
 
